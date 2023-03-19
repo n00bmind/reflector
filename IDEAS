@@ -1,0 +1,23 @@
+
+:: Objectives
+
+- Very fast deserialization. Serialization can take a bit more time. When choosing between compactness and speed, we'll choose speed every time, and rely on compression where minimal size is needed.
+- Direct access. An in-memory or memory-mapped buffer can already provide direct access to any data field at any level of depth, with zero memory copies (no deserialization), similar to Flatbuffers.
+- Flexibility. Again like Flatbuffers, it should support forwards/backwards compatibility, i.e. the ability to add/delete struct attributes or alter how they're laid out in memory without explicit versioning mechanisms.
+- Really easy to use. A user should only need to tag which structs will be serialized and a metaprogram should take care of the rest. No schemas, no need to write any code.
+- Should have some extensibility. Even though the metaprogram should take care of all the basic constructs of the language, there should be a mechanism to customize how certain types are reflected.
+
+
+:: Details
+
+- For direct access and reducing redundancy, we'll have a 'disaggregated' vtable mechanism, where entries will point to the relative location of each field in a type.
+  However, since we prioritize speed, deserialization of in-order fields (the vast majority of situations) shouldn't require looking up the vtable at all, even if that requires additional redundant data.
+  Vtables (representing the schema) will be serialized first, close to the start of the buffer, as compactly as possible, and separate from the actual data. This will allow using small offsets to locate them and should keep them reasonably hot while deserializing.
+
+- Relative pointers will be used where possible, so that we can still achieve huge sizes without the need for 64 bit offsets.
+
+- During deserialization, we need to always prioritize reading & writing memory in order, meaning filling in all inline data first, while out of line (dynamic) data should be:
+  1. Allocated using a linear arena used for this purpose
+  2. Enqueued to be deserialized after all inline data has been done. Deserializing these secondary structs will happen in the order they were allocated in
+  Ofc, this will all require adequate profiling and optimization.
+
