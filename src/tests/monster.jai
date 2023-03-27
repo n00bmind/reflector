@@ -36,3 +36,11 @@ Weapon :: struct
     name: string;
     damage: s16;
 }
+
+test :: ()
+{
+    testMonster: Monster;
+
+    BinaryWriter w;
+    Reflect( *w, *testMonster );
+}

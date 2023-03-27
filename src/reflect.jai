@@ -1,0 +1,5 @@
+
+Reflector :: struct (IsReader: bool)
+{
+
+}
