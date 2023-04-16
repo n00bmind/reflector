@@ -1,2 +1,2 @@
-# codec
+# cerealkiller
 Serialization library for Jai
