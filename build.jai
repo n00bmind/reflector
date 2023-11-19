@@ -8,19 +8,10 @@ build :: ()
     set_build_options_dc( .{do_output=false} );  // No executable for this workspace.
 
     // The compiler will set the CWD to the directory containing the current file
-    path := get_working_directory();
-    // NOTE Something broke in the last beta update, and now the bin/ dir specified below is created one folder up relative to what we pass here..
-    //set_working_directory( join( path, "/.." ) );
-    //path = get_working_directory();
-    // NOTE Shows 'W:\repos\replr\src' as it should
-    print( "Working directory for 'build' metaprogram: '%'\n", path );
-
-    // Right now it seems there's no way to just pass a path string directly
-    loc: Source_Code_Location;
-    loc.fully_pathed_filename = path;
+    //path := get_working_directory();
+    //print( "Working directory for 'build' metaprogram: '%'\n", path );
 
     global_options := get_build_options();
-    // NOTE Writes to 'W:\repos\replr\bin'
     global_options.output_path = "bin";
     global_options.intermediate_path = "bin";
 
@@ -50,12 +41,12 @@ build :: ()
         options.output_type = .EXECUTABLE;
         options.output_executable_name = "test";
         if build_release
-            options.optimization_level = .RELEASE;
-        //else
-            //options.backend = .X64;
-        set_build_options( options, w, loc );
+            set_optimization( *options, .VERY_OPTIMIZED, true );
+        else
+            set_optimization( *options, .VERY_DEBUG, true );
+        set_build_options( options, w );
 
-        add_build_file( "first.jai", w );
+        add_build_file( "src/test.jai", w );
     }
 
     message_loop();

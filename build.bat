@@ -1,2 +1,2 @@
 @echo off
-jai src/build.jai 
+jai build.jai 

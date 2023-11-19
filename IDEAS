@@ -3,7 +3,8 @@
 
 - Very fast deserialization. Serialization can take a bit more time. When choosing between compactness and speed, we'll choose speed every time, and rely on compression where minimal size is needed.
 - Direct access. An in-memory or memory-mapped buffer can already provide direct access to any data field at any level of depth, with zero memory copies (no deserialization), similar to Flatbuffers.
-- Flexibility. Again like Flatbuffers, it should support forwards/backwards compatibility, i.e. the ability to add/delete struct attributes or alter how they're laid out in memory without explicit versioning mechanisms.
+  The structs holding this data however must be the final user structs and types, so no conversion or access API is necessary at all.
+- Flexibility. Again like Flatbuffers, it should support forwards/backwards compatibility, i.e. the ability to add/delete struct attributes or alter how they're laid out in memory without complicated explicit versioning mechanisms.
 - Really easy to use. A user should only need to tag which structs will be serialized and a metaprogram should take care of the rest. No schemas, no need to write any code.
 - Should have some extensibility. Even though the metaprogram should take care of all the basic constructs of the language, there should be a mechanism to customize how certain types are reflected.
 
@@ -21,3 +22,11 @@
   2. Enqueued to be deserialized after all inline data has been done. Deserializing these secondary structs will happen in the order they were allocated in
   Ofc, this will all require adequate profiling and optimization.
 
+:: Refs
+
+- Flatbuffer C implementation ofc
+- Check https://github.com/inkeliz/karmem
+
+
+:: Name
+Rename this to 'Reflector' or something on that theme
