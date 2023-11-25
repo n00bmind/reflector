@@ -81,7 +81,13 @@ message_loop :: ()
                 // For each struct we're interested in, generate its reflection code
                 for structs_to_build
                 {
-                    print( "Found struct %\n", it.defined_type.name );
+                    print( "--> Found struct '%'\n", it.defined_type.name );
+
+                    st := cast(*Type_Info_Struct)it.defined_type;
+                    for m: st.members
+                    {
+                        print( "%: %  '%'\n", m.name, <<m.type, m.notes );
+                    }
                     // TODO 
                     //s := tprint("#run %();", it.name);
                     //add_build_string(s, message.workspace);
@@ -90,6 +96,9 @@ message_loop :: ()
                 // Reset the array so we don't emit duplicate code for these structs
                 // next time we get a TYPECHECKED_ALL_WE_CAN.
                 array_reset(*structs_to_build);
+
+                // We're done (right?)
+                break;
             }
             
           case .COMPLETE;
