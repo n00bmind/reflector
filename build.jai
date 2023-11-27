@@ -19,6 +19,8 @@ build :: ()
     build_release := false;
     args := global_options.compile_time_command_line;
 
+    // NOTE These arguments have to be specified last, after any arguments for the compiler itself, separated with a hyphen, e.g:
+    // jai build.jai - release
     for arg: args
     {
         if arg ==
@@ -41,9 +43,15 @@ build :: ()
         options.output_type = .EXECUTABLE;
         options.output_executable_name = "test";
         if build_release
+        {
             set_optimization( *options, .VERY_OPTIMIZED, true );
+            options.backend =.LLVM;
+        }
         else
-            set_optimization( *options, .VERY_DEBUG, true );
+        {
+            set_optimization( *options, .DEBUG, true );
+            options.backend =.X64;
+        }
         set_build_options( options, w );
 
         add_build_file( "src/test.jai", w );
@@ -63,21 +71,22 @@ message_loop :: ()
         message := compiler_wait_for_message();
         if message.kind ==
         {
-          case .TYPECHECKED;
+        case .TYPECHECKED;
             typechecked := cast(*Message_Typechecked) message;
 
             // Look for any struct that we may want to reflect
             for tc: typechecked.structs
             {
                 header := tc.expression;
-                if has_note(header, "serialized")
+                if has_note(header, "reflect")
                     array_add(*structs_to_build, header);
             }
-            
-          case .PHASE;
+
+        case .PHASE;
             phase := cast(*Message_Phase) message;
-            if phase.phase == .TYPECHECKED_ALL_WE_CAN
+            if phase.phase ==
             {
+            case .TYPECHECKED_ALL_WE_CAN;
                 // For each struct we're interested in, generate its reflection code
                 for structs_to_build
                 {
@@ -86,9 +95,10 @@ message_loop :: ()
                     st := cast(*Type_Info_Struct)it.defined_type;
                     for m: st.members
                     {
-                        print( "%: %  '%'\n", m.name, <<m.type, m.notes );
+                        print( "+%. %: % (%)  '%'\n", m.offset_in_bytes, m.name, type_to_string( m.type ), m.type.runtime_size, m.notes );
                     }
                     // TODO 
+                    // https://github.com/Ivo-Balbaert/The_Way_to_Jai/blob/main/book/26C_Applications%20of%20Metaprogramming.md#2616-creating-code-for-each-member-in-a-structure
                     //s := tprint("#run %();", it.name);
                     //add_build_string(s, message.workspace);
                 }
@@ -97,11 +107,11 @@ message_loop :: ()
                 // next time we get a TYPECHECKED_ALL_WE_CAN.
                 array_reset(*structs_to_build);
 
-                // We're done (right?)
-                break;
+            case .PRE_WRITE_EXECUTABLE;
+                // TODO Any diagnostic / info msgs should go here so as to not interfere with the compiler's own msgs
             }
-            
-          case .COMPLETE;
+
+        case .COMPLETE;
             break;
         }
     }
@@ -112,4 +122,5 @@ has_note :: (header: *Code_Struct, note: string) -> bool {
     return false;
 }
 
+// TODO Threading?
 structs_to_build: [..] *Code_Struct;

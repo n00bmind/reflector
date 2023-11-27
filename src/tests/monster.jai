@@ -17,7 +17,7 @@ Vec3 :: struct
     x, y, z: float;
 }
 
-Monster :: struct @serialized
+Monster :: struct @reflect
 {
     pos: Vec3;                  @0
     mana: s16 = 150;            @1
@@ -27,7 +27,7 @@ Monster :: struct @serialized
     inventory: [..] u8;
     color: Color = .Blue;       @5
     weapons: [..] Weapon;       @6
-    equipped: Equipment;        @id(7)
+    equipped: Equipment;        @7 @name("bla")
     path: [..] Vec3;            @id(8)
 }
 

@@ -1,0 +1,4 @@
+
+- Make the generator available as a metaprogram plugin, so people don't have to write their own metaprogram to use this
+  https://github.com/Ivo-Balbaert/The_Way_to_Jai/blob/main/book/36_Plugins.md
+
