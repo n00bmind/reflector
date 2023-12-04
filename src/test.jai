@@ -1,9 +1,13 @@
 #import "Basic";
 
+#load "reflect.jai";
 #load "tests/monster.jai";
 
 main :: ()
 {
-    test();
-    print( "Done." );
+    r: BinaryReader;
+    m: Monster;
+
+    result := Reflect( *m, *r );
+    print( "Result: %.", result );
 }
