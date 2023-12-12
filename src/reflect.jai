@@ -22,7 +22,7 @@ Reflect :: ( d: *$T/interface struct {}, r: *Reflector ) -> ReflectResult
     // TODO When reading, the stream tells us the order of members to write to
     for m: st.members
     {
-        // TODO These is a constant member, we should skip it.. (and if it has an id note, emit an error / warning)
+        // TODO This is a constant member, we should skip it.. (and if it has an id note, emit an error / warning)
         assert( m.offset_in_bytes >= 0, "Member '%' has offset %", m.name, m.offset_in_bytes );
 
         //if( ReflectMemberBegin( m, r ) )

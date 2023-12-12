@@ -6,3 +6,4 @@
 *.pdb
 
 .session.vim
+.added_strings*.jai

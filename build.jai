@@ -57,14 +57,16 @@ build :: ()
         add_build_file( "src/test.jai", w );
     }
 
-    message_loop();
+    MessageLoop( w );
 
     compiler_end_intercept(w);
 }
 #run build();
 
 
-message_loop :: ()
+#scope_file
+
+MessageLoop :: ( w: Workspace )
 {
     while true
     {
@@ -78,7 +80,7 @@ message_loop :: ()
             for tc: typechecked.structs
             {
                 header := tc.expression;
-                if has_note(header, "reflect")
+                if HasNote(header, "reflect")
                     array_add(*structs_to_build, header);
             }
 
@@ -90,21 +92,15 @@ message_loop :: ()
                 // For each struct we're interested in, generate its reflection code
                 for structs_to_build
                 {
-                    print( "--> Found struct '%'\n", it.defined_type.name );
+                    print( "--> Generating reflection code for struct '%'\n", it.defined_type.name );
 
                     st := cast(*Type_Info_Struct)it.defined_type;
-                    for m: st.members
-                    {
-                        //print( "+%. %: % (%)  '%'\n", m.offset_in_bytes, m.name, type_to_string( m.type ), m.type.runtime_size, m.notes );
-                    }
-                    // TODO 
-                    // https://github.com/Ivo-Balbaert/The_Way_to_Jai/blob/main/book/26C_Applications%20of%20Metaprogramming.md#2616-creating-code-for-each-member-in-a-structure
-                    //s := tprint("#run %();", it.name);
-                    //add_build_string(s, message.workspace);
+                    codeString := GenReflectFunction( st );
+
+                    add_build_string( codeString, w );
                 }
 
-                // Reset the array so we don't emit duplicate code for these structs
-                // next time we get a TYPECHECKED_ALL_WE_CAN.
+                // Reset the array so we don't emit duplicate code for these structs next time we get this message
                 array_reset(*structs_to_build);
 
             case .PRE_WRITE_EXECUTABLE;
@@ -117,10 +113,35 @@ message_loop :: ()
     }
 }
 
-has_note :: (header: *Code_Struct, note: string) -> bool {
+HasNote :: (header: *Code_Struct, note: string) -> bool {
     for header.notes  if it.text == note  return true;
     return false;
 }
 
+GenReflectFunction :: ( st: *Type_Info_Struct ) -> string
+{
+    defer free_buffers( *builder );
+
+    append( *builder, tprint( "Reflect% :: () {\n", st.name ) );
+    //for proc: procs {
+      //print_to_builder(*builder, "  %1();\n", proc);
+    //}
+
+                    //for m: st.members
+                    //{
+                        ////print( "+%. %: % (%)  '%'\n", m.offset_in_bytes, m.name, type_to_string( m.type ), m.type.runtime_size, m.notes );
+                    //}
+                    // TODO 
+                    // https://github.com/Ivo-Balbaert/The_Way_to_Jai/blob/main/book/26C_Applications%20of%20Metaprogramming.md#2616-creating-code-for-each-member-in-a-structure
+                    //s := tprint("#run %();", it.name);
+                    //add_build_string(s, message.workspace);
+
+    append(*builder, "}\n");
+
+    // TODO Where is added_build_strings.jai?
+    return builder_to_string( *builder );
+}
+
 // TODO Threading?
 structs_to_build: [..] *Code_Struct;
+builder: String_Builder;
