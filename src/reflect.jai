@@ -10,6 +10,7 @@ Reflector :: struct ($IsReading: bool)
 ReflectResult :: enum
 {
     Ok;
+    SomeError;
 }
 ReflectOk :: ReflectResult.Ok;
 
@@ -17,7 +18,9 @@ ReflectOk :: ReflectResult.Ok;
 #if 0
 {
     // This seems to allow creating a specific overload for structs without using #modify
-    Reflect :: ( d: *$T/interface struct {}, r: *Reflector ) -> ReflectResult
+    // TODO I have the feeling I should be able to do everything via a macro that looks something like this (but perhaps passing a code node)
+    // TODO Can functions & macros be part of the same overload set!? (looks like in principle they could..)
+    Reflect :: ( d: *$T/interface struct {}, r: *Reflector ) -> ReflectResult #expand
     {
         st := cast(*Type_Info_Struct) type_info(T);
         // TODO When writing, follow the order in the notes
@@ -58,15 +61,8 @@ ReflectField :: ( field: Code, r: *Reflector ) -> ReflectResult #expand
     print( "Got field: %\n", #insert field );
     result := Reflect( #insert field, r );
     // Return from outer Reflect() function
-    `return ReflectOk;
+    `return result;
 }
-
-// FIXME This needs to be inserted from the metaprogram too! (any way we could *not* have to do that?)
-Reflect :: ( d: *$T, r: *Reflector ) -> ReflectResult
-{
-    return ReflectOk;
-}
-
 
 //
 // BINARY

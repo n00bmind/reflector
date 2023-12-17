@@ -5,9 +5,14 @@
 
 main :: ()
 {
-    r: BinaryReader;
+    writer: BinaryWriter;
+    reader: BinaryReader;
     m: Monster;
 
-    result := Reflect( *m, *r );
-    print( "Result: %.", result );
+    result := Reflect( *m, *writer );
+    print( "Writer result: %\n", result );
+
+    result  = Reflect( *m, *reader );
+    print( "Reader result: %\n", result );
 }
+

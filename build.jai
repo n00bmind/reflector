@@ -89,6 +89,12 @@ MessageLoop :: ( w: Workspace )
             if phase.phase ==
             {
             case .TYPECHECKED_ALL_WE_CAN;
+                if !globalAddedBasicStrings
+                {
+                    add_build_string( reflectPrimitivesFunc, w );
+                    globalAddedBasicStrings = true;
+                }
+
                 // For each struct we're interested in, generate its Reflect() overload
                 for globalStructsToBuild
                 {
@@ -123,9 +129,6 @@ GenReflectFunction :: ( st: *Type_Info_Struct ) -> string
     defer free_buffers( *globalBuilder );
 
     append( *globalBuilder, tprint( "Reflect :: ( d: *%, r: *Reflector ) -> ReflectResult {\n", st.name ) );
-    //for proc: procs {
-      //print_to_builder(*globalBuilder, "  %1();\n", proc);
-    //}
 
     for m: st.members
     {
@@ -143,6 +146,25 @@ GenReflectFunction :: ( st: *Type_Info_Struct ) -> string
     return builder_to_string( *globalBuilder );
 }
 
+// The general Reflect() overload for all primitive types. Accept anything that's not a struct.
+// NOTE This needs to be inserted from the metaprogram too! (any way we could *not* have to do that?)
+reflectPrimitivesFunc := #string ENDSTR
+Reflect :: inline ( d: *$T, r: *Reflector ) -> ReflectResult
+#modify
+{
+    ti := cast(*Type_Info) T;
+    return ti.type != .STRUCT;
+}
+{
+    #if r.IsReading
+        return ReflectOk;
+    else
+        return ReflectResult.SomeError;
+}
+ENDSTR
+
+
 // TODO Threading?
 globalStructsToBuild: [..] *Code_Struct;
 globalBuilder: String_Builder;
+globalAddedBasicStrings: bool = false;
