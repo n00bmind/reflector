@@ -81,7 +81,7 @@ MessageLoop :: ( w: Workspace )
             {
                 header := tc.expression;
                 if HasNote(header, "reflect")
-                    array_add(*structs_to_build, header);
+                    array_add(*globalStructsToBuild, header);
             }
 
         case .PHASE;
@@ -89,8 +89,8 @@ MessageLoop :: ( w: Workspace )
             if phase.phase ==
             {
             case .TYPECHECKED_ALL_WE_CAN;
-                // For each struct we're interested in, generate its reflection code
-                for structs_to_build
+                // For each struct we're interested in, generate its Reflect() overload
+                for globalStructsToBuild
                 {
                     print( "--> Generating reflection code for struct '%'\n", it.defined_type.name );
 
@@ -101,7 +101,7 @@ MessageLoop :: ( w: Workspace )
                 }
 
                 // Reset the array so we don't emit duplicate code for these structs next time we get this message
-                array_reset(*structs_to_build);
+                array_reset(*globalStructsToBuild);
 
             case .PRE_WRITE_EXECUTABLE;
                 // TODO Any diagnostic / info msgs should go here so as to not interfere with the compiler's own msgs
@@ -120,28 +120,29 @@ HasNote :: (header: *Code_Struct, note: string) -> bool {
 
 GenReflectFunction :: ( st: *Type_Info_Struct ) -> string
 {
-    defer free_buffers( *builder );
+    defer free_buffers( *globalBuilder );
 
-    append( *builder, tprint( "Reflect% :: () {\n", st.name ) );
+    append( *globalBuilder, tprint( "Reflect :: ( d: *%, r: *Reflector ) -> ReflectResult {\n", st.name ) );
     //for proc: procs {
-      //print_to_builder(*builder, "  %1();\n", proc);
+      //print_to_builder(*globalBuilder, "  %1();\n", proc);
     //}
 
-                    //for m: st.members
-                    //{
-                        ////print( "+%. %: % (%)  '%'\n", m.offset_in_bytes, m.name, type_to_string( m.type ), m.type.runtime_size, m.notes );
-                    //}
+    for m: st.members
+    {
+        print( "+%. %: % (%)  '%'\n", m.offset_in_bytes, m.name, type_to_string( m.type ), m.type.runtime_size, m.notes );
+        append( *globalBuilder, tprint( "    ReflectField( *d.%, r );\n", m.name ) );
+    }
                     // TODO 
                     // https://github.com/Ivo-Balbaert/The_Way_to_Jai/blob/main/book/26C_Applications%20of%20Metaprogramming.md#2616-creating-code-for-each-member-in-a-structure
                     //s := tprint("#run %();", it.name);
                     //add_build_string(s, message.workspace);
 
-    append(*builder, "}\n");
+    append(*globalBuilder, "}\n");
 
     // TODO Where is added_build_strings.jai?
-    return builder_to_string( *builder );
+    return builder_to_string( *globalBuilder );
 }
 
 // TODO Threading?
-structs_to_build: [..] *Code_Struct;
-builder: String_Builder;
+globalStructsToBuild: [..] *Code_Struct;
+globalBuilder: String_Builder;
