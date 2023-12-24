@@ -4,7 +4,7 @@ Reflector :: struct ($IsReading: bool)
 {
     IsWriting :: !IsReading;
 
-
+    error: ReflectResult = ReflectOk;
 }
 
 ReflectResult :: enum
@@ -14,12 +14,21 @@ ReflectResult :: enum
 }
 ReflectOk :: ReflectResult.Ok;
 
+SetError :: ( error: ReflectResult, r: *Reflector )
+{
+    // Only remember the first error location
+    if r.error != ReflectOk
+        r.error = error;
+}
 
 #if 0
 {
     // This seems to allow creating a specific overload for structs without using #modify
     // TODO I have the feeling I should be able to do everything via a macro that looks something like this (but perhaps passing a code node)
     // TODO Can functions & macros be part of the same overload set!? (looks like in principle they could..)
+
+    // TODO Could we just '#insert GenReflectFunction()' in here? (removing the function header from that, just leaving the ReflectField calls..)
+    // That'd mean that only the macros that are actually called would be generated, potentially saving compilation time
     Reflect :: ( d: *$T/interface struct {}, r: *Reflector ) -> ReflectResult #expand
     {
         st := cast(*Type_Info_Struct) type_info(T);
@@ -39,7 +48,7 @@ ReflectOk :: ReflectResult.Ok;
                 }
 
                 // TODO How to dynamically cast this back to the actual member type so it goes to the appropriate Reflect() overload?
-                M := get_type( m.type );
+                M := get_root_type( m.type );
                 print( "Member '%' is of type %\n", m.name, M );
                 //result := Reflect( GetMemberValueAs( m, d, M ), r );
                 //if( result != ReflectOk )
@@ -55,14 +64,28 @@ ReflectOk :: ReflectResult.Ok;
     }
 }
 
-// TODO Apparently there's a limit to macro recursion .. https://github.com/Jai-Community/Jai-Community-Library/wiki/Getting-Started#nested-macros
-ReflectField :: ( field: Code, r: *Reflector ) -> ReflectResult #expand
+// TODO When benchmarking, test making a custom overload for BinaryReflectors that tries to streamline this as much as possible
+// NOTE Apparently there's a limit to macro recursion .. https://github.com/Jai-Community/Jai-Community-Library/wiki/Getting-Started#nested-macros
+ReflectField :: ( field: Code, fieldId: u16, name: string, r: *Reflector ) -> ReflectResult #expand
 {
-    print( "Got field: %\n", #insert field );
-    result := Reflect( #insert field, r );
-    // Return from outer Reflect() function
-    `return result;
+    result: ReflectResult = ReflectOk;
+
+    //fieldOffset := ReflectFieldOffset( r );      
+    if ReflectFieldStart( fieldId, name, r )  // *reflectedTypeInfo, attribs ) )
+    {                                                     
+        result = Reflect( #insert field, r );                        
+
+        ReflectFieldEnd( fieldId, r );  // fieldOffset, &info, 
+    }
+
+    if result != ReflectOk
+    {
+        SetError( result, r );
+        // Return from outer Reflect() function
+        `return result;
+    }
 }
+
 
 //
 // BINARY
@@ -80,4 +103,12 @@ BinaryReflector :: struct( $IsReading: bool )
 BinaryReader :: BinaryReflector( true );
 BinaryWriter :: BinaryReflector( false );
 
+ReflectFieldStart :: ( fieldId: u16, name: string, r: *BinaryReflector ) -> bool
+{
+    return true;
+}
 
+ReflectFieldEnd :: ( fieldId: u16, r: *BinaryReflector )
+{
+
+}

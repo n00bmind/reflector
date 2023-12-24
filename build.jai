@@ -34,7 +34,6 @@ build :: ()
 
     w := compiler_create_workspace();
     // I assume this must happen before we add files to the compilation?
-    // TODO Will this still have everything in the typechecked list of structs below?
     compiler_begin_intercept( w, .SKIP_EXPRESSIONS_WITHOUT_NOTES );
 
     // Main executable
@@ -101,7 +100,7 @@ MessageLoop :: ( w: Workspace )
                     print( "--> Generating reflection code for struct '%'\n", it.defined_type.name );
 
                     st := cast(*Type_Info_Struct)it.defined_type;
-                    codeString := GenReflectFunction( st );
+                    codeString := GenReflectFunction( st, w );
 
                     add_build_string( codeString, w );
                 }
@@ -124,25 +123,74 @@ HasNote :: (header: *Code_Struct, note: string) -> bool {
     return false;
 }
 
-GenReflectFunction :: ( st: *Type_Info_Struct ) -> string
+// NOTE Returns a temporary array
+// TODO Polymorph and extract to bricks
+GetNoteArgs :: ( type: Type_Info_Struct_Member, name: string, required: bool ) -> bool, []string
+{
+    for type.notes
+    {
+        if starts_with( it, name )
+        {
+            if name.count > it.count && it[name.count] == #char "("
+
+            // Get substring up until closing parens
+            argsFound, args, _ := split_from_left( slice( it, name.count + 1, it.count ), #char ")" );
+            if !argsFound
+                return false, .[];
+
+            // Parse args as comma separated strings
+            // Weird cast required to get the 'fast' single char overload
+            result := split( args, cast(u8) #char ",", temp );
+            return true, result;
+        }
+    }
+    return false, .[];
+}
+
+GenReflectFunction :: ( st: *Type_Info_Struct, w: Workspace ) -> string
 {
     defer free_buffers( *globalBuilder );
 
-    append( *globalBuilder, tprint( "Reflect :: ( d: *%, r: *Reflector ) -> ReflectResult {\n", st.name ) );
+    append( *globalBuilder, tprint( "Reflect :: ( d: *%, r: *Reflector ) -> ReflectResult\n", st.name ) );
+    append(*globalBuilder, "{\n");
 
+    // TODO Skip constants, usings, procedures? etc
+    // TODO TODO Check discovered layout against a persisted one from last compilation
     for m: st.members
     {
-        print( "+%. %: % (%)  '%'\n", m.offset_in_bytes, m.name, type_to_string( m.type ), m.type.runtime_size, m.notes );
-        append( *globalBuilder, tprint( "    ReflectField( *d.%, r );\n", m.name ) );
-    }
-                    // TODO 
-                    // https://github.com/Ivo-Balbaert/The_Way_to_Jai/blob/main/book/26C_Applications%20of%20Metaprogramming.md#2616-creating-code-for-each-member-in-a-structure
-                    //s := tprint("#run %();", it.name);
-                    //add_build_string(s, message.workspace);
+        // Parse field id
+        idFound, idArgs := GetNoteArgs( m, "id" );
+        if !idFound
+            // This guy is not serialised
+            continue;
 
+        if idArgs.count == 0
+        {
+            // TODO We'd need the code node of the member for more accurate location reporting
+            compiler_report( "'id' note requires a u16 argument (in parenthesis)", compiler_get_struct_location( w, st ) );
+            return "";
+        }
+        else if idArgs.count > 1
+        {
+            // TODO Show "some args ignored" warning
+        }
+
+        fieldId, idOk, _ := string_to_int( idArgs[0], 10, u16 );
+        if !idOk
+        {
+            // TODO Error out and stop compilation
+            return "";
+        }
+
+        // TODO Parse optional name attribute (& more..)
+
+        print( "+%. %: % (%)  '%'\n", m.offset_in_bytes, m.name, type_to_string( m.type ), m.type.runtime_size, m.notes );
+        append( *globalBuilder, tprint( "    ReflectField( *d.%, %, \"%\", r );\n", m.name, fieldId, m.name ) );
+    }
+
+    append(*globalBuilder, "    return ReflectOk;\n");
     append(*globalBuilder, "}\n");
 
-    // TODO Where is added_build_strings.jai?
     return builder_to_string( *globalBuilder );
 }
 

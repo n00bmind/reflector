@@ -20,7 +20,7 @@ Vec3 :: struct
 Monster :: struct @reflect
 {
     //pos: Vec3;                  @0
-    mana: s16 = 150;            @id(1)
+    mana: s16 = 150;            @id
     //hp: s16 = 100;              @2
     //name: string;               @3
     ////friendly: bool = false;     @4
