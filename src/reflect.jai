@@ -1,4 +1,8 @@
 #import "Compiler";
+#import "Bucket_Array";
+
+#load "basic.jai";
+
 
 Reflector :: struct ($IsReading: bool)
 {
@@ -66,16 +70,16 @@ SetError :: ( error: ReflectResult, r: *Reflector )
 
 // TODO When benchmarking, test making a custom overload for BinaryReflectors that tries to streamline this as much as possible
 // NOTE Apparently there's a limit to macro recursion .. https://github.com/Jai-Community/Jai-Community-Library/wiki/Getting-Started#nested-macros
-ReflectField :: ( field: Code, fieldId: u16, name: string, r: *Reflector ) -> ReflectResult #expand
+ReflectField :: ( field: Code, fieldId: u16, name: string, info: *ReflectedTypeInfo, r: *Reflector ) #expand
 {
     result: ReflectResult = ReflectOk;
 
     //fieldOffset := ReflectFieldOffset( r );      
-    if ReflectFieldStart( fieldId, name, r )  // *reflectedTypeInfo, attribs ) )
+    if BeginReflectField( fieldId, name, info, r )  // *reflectedTypeInfo, attribs ) )
     {                                                     
         result = Reflect( #insert field, r );                        
 
-        ReflectFieldEnd( fieldId, r );  // fieldOffset, &info, 
+        EndReflectField( fieldId, info, r );  // fieldOffset, &info, 
     }
 
     if result != ReflectOk
@@ -91,24 +95,85 @@ ReflectField :: ( field: Code, fieldId: u16, name: string, r: *Reflector ) -> Re
 // BINARY
 //
 
-BinaryReflector :: struct( $IsReading: bool )
+BinaryReflector :: struct( $IsReading2: bool )
 {
-    #as using base: Reflector( IsReading );
+    #as using reflector: Reflector( IsReading2 );
 
-    // TODO Polymorph buffer type?
-    buffer:     [] u8;
     bufferHead: s64;
 }
 
-BinaryReader :: BinaryReflector( true );
-BinaryWriter :: BinaryReflector( false );
-
-ReflectFieldStart :: ( fieldId: u16, name: string, r: *BinaryReflector ) -> bool
+BinaryReader :: struct
 {
+    #as using binary: BinaryReflector( true );
+
+    // TODO Polymorph buffer type?
+    buffer: [] u8;
+}
+
+BinaryWriter :: struct
+{
+    #as using binary: BinaryReflector( false );
+
+    buffer: Bucket_Array(u8, 4096);
+}
+
+
+ReflectedTypeInfo :: struct
+{
+    startOffset:      u32;
+    totalSize:        u32;
+    currentFieldSize: u32;
+    fieldCount:       u16;
+}
+
+BeginReflectType :: ( info: *ReflectedTypeInfo, r: *BinaryReflector )
+{
+    #if r.IsReading
+    {
+
+    }
+    else
+    {
+
+    }
+}
+
+EndReflectType :: ( info: *ReflectedTypeInfo, r: *BinaryReflector )
+{
+    #if r.IsReading
+    {
+
+    }
+    else
+    {
+
+    }
+}
+
+BinaryField :: struct
+{
+    size:    u32;
+    id:      u16;
+    _padding: [2] u8;
+}
+#assert( offset_of( BinaryField, "_padding" ) == 6 );
+
+BeginReflectField :: ( fieldId: u16, name: string, info: *ReflectedTypeInfo, r: *BinaryReflector ) -> bool
+{
+    #if r.IsReading
+    {
+
+    }
+    else
+    {
+        info.fieldCount += 1;
+        // Push a 0 placeholder for the totalSize (will be computed in EndReflectField)
+
+    }
     return true;
 }
 
-ReflectFieldEnd :: ( fieldId: u16, r: *BinaryReflector )
+EndReflectField :: ( fieldId: u16, info: *ReflectedTypeInfo, r: *BinaryReflector )
 {
 
 }

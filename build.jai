@@ -125,23 +125,28 @@ HasNote :: (header: *Code_Struct, note: string) -> bool {
 
 // NOTE Returns a temporary array
 // TODO Polymorph and extract to bricks
-GetNoteArgs :: ( type: Type_Info_Struct_Member, name: string, required: bool ) -> bool, []string
+GetNoteArgs :: ( type: Type_Info_Struct_Member, name: string ) -> noteFound: bool, args: []string
 {
     for type.notes
     {
         if starts_with( it, name )
         {
-            if name.count > it.count && it[name.count] == #char "("
+            // Does it have any arguments
+            if it.count > name.count && it[name.count] == #char "("
+            {
+                // TODO Improve reporting of malformed arg expressions
+                // Get substring up until closing parens
+                argsFound, argString, _ := split_from_left( slice( it, name.count + 1, it.count ), #char ")" );
+                if !argsFound
+                    return false, .[];
 
-            // Get substring up until closing parens
-            argsFound, args, _ := split_from_left( slice( it, name.count + 1, it.count ), #char ")" );
-            if !argsFound
-                return false, .[];
-
-            // Parse args as comma separated strings
-            // Weird cast required to get the 'fast' single char overload
-            result := split( args, cast(u8) #char ",", temp );
-            return true, result;
+                // Parse args as comma separated strings
+                // Weird cast required to get the 'fast' single char overload
+                args := split( argString, cast(u8) #char ",", temp );
+                return true, args;
+            }
+            else
+                return true, .[];
         }
     }
     return false, .[];
@@ -152,7 +157,11 @@ GenReflectFunction :: ( st: *Type_Info_Struct, w: Workspace ) -> string
     defer free_buffers( *globalBuilder );
 
     append( *globalBuilder, tprint( "Reflect :: ( d: *%, r: *Reflector ) -> ReflectResult\n", st.name ) );
-    append(*globalBuilder, "{\n");
+    append( *globalBuilder, "{\n" );
+    append( *globalBuilder, "    info: ReflectedTypeInfo;\n" );
+    append( *globalBuilder, "    BeginReflectType( *info, r );\n" );
+    append( *globalBuilder, "    defer EndReflectType( *info, r );\n" );
+    append( *globalBuilder, "    \n" );
 
     // TODO Skip constants, usings, procedures? etc
     // TODO TODO Check discovered layout against a persisted one from last compilation
@@ -164,9 +173,9 @@ GenReflectFunction :: ( st: *Type_Info_Struct, w: Workspace ) -> string
             // This guy is not serialised
             continue;
 
-        if idArgs.count == 0
+        if !idArgs
         {
-            // TODO We'd need the code node of the member for more accurate location reporting
+            // FIXME We'd need the code node of the member for more accurate location reporting
             compiler_report( "'id' note requires a u16 argument (in parenthesis)", compiler_get_struct_location( w, st ) );
             return "";
         }
@@ -185,7 +194,7 @@ GenReflectFunction :: ( st: *Type_Info_Struct, w: Workspace ) -> string
         // TODO Parse optional name attribute (& more..)
 
         print( "+%. %: % (%)  '%'\n", m.offset_in_bytes, m.name, type_to_string( m.type ), m.type.runtime_size, m.notes );
-        append( *globalBuilder, tprint( "    ReflectField( *d.%, %, \"%\", r );\n", m.name, fieldId, m.name ) );
+        append( *globalBuilder, tprint( "    ReflectField( *d.%, %, \"%\", *info, r );\n", m.name, fieldId, m.name ) );
     }
 
     append(*globalBuilder, "    return ReflectOk;\n");
