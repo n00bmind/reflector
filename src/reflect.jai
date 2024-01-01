@@ -2,6 +2,7 @@
 #import "Bucket_Array";
 
 #load "basic.jai";
+#load "datatypes.jai";
 
 
 Reflector :: struct ($IsReading: bool)
@@ -114,16 +115,25 @@ BinaryWriter :: struct
 {
     #as using binary: BinaryReflector( false );
 
-    buffer: Bucket_Array(u8, 4096);
+    buffer: BufferBuilder( 1 * Megabytes );
 }
 
 
 ReflectedTypeInfo :: struct
 {
-    startOffset:      u32;
-    totalSize:        u32;
-    currentFieldSize: u32;
-    fieldCount:       u16;
+    startOffset:      s64;
+    currentFieldSize: s32;
+
+    Header :: struct
+    {
+        totalSize:      s32;
+        fieldCount:     u16;
+        _padding:       [2] u8;
+    }
+    using header:     Header;
+
+    HeaderSize :: #run offset_of( Header, "_padding" );
+    #assert( HeaderSize == 6 );
 }
 
 BeginReflectType :: ( info: *ReflectedTypeInfo, r: *BinaryReflector )
@@ -134,7 +144,9 @@ BeginReflectType :: ( info: *ReflectedTypeInfo, r: *BinaryReflector )
     }
     else
     {
-
+        info.startOffset = r.buffer.totalSize;
+        // make space to write a header later
+        PushEmpty( *r.buffer, ReflectedTypeInfo.HeaderSize );
     }
 }
 
@@ -152,7 +164,7 @@ EndReflectType :: ( info: *ReflectedTypeInfo, r: *BinaryReflector )
 
 BinaryField :: struct
 {
-    size:    u32;
+    size:    s32;
     id:      u16;
     _padding: [2] u8;
 }
