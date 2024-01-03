@@ -19,6 +19,11 @@ FindPage :: inline ( using buffer: *BufferBuilder, index: int ) -> pageIndex: in
     return pageIndex, offsetInPage;
 }
 
+Push :: ( using buffer: *BufferBuilder, source: [] u8 )
+{
+    CopyFrom( buffer, source, buffer.size );
+}
+
 PushEmpty :: ( using buffer: *BufferBuilder, extraSize: int )
 {
     ResizeExtra( buffer, extraSize );

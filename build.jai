@@ -167,6 +167,8 @@ GenReflectFunction :: ( st: *Type_Info_Struct, w: Workspace ) -> string
     // TODO Skip constants, usings, procedures? etc
     // TODO TODO Check discovered layout against a persisted one from last compilation
     // FIXME We'd need the code node of each member for more accurate location reporting in compiler_report
+    // TODO When writing, *always order by offset in the source struct type* for cache friendliness
+    // TODO When reading, the stream tells us the order of members to write to, but assume memory order too
     for m: st.members
     {
         // Parse field id

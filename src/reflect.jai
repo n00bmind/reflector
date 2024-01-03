@@ -38,6 +38,7 @@ SetError :: ( error: ReflectResult, r: *Reflector )
 
     // TODO Could we just '#insert GenReflectFunction()' in here? (removing the function header from that, just leaving the ReflectField calls..)
     // That'd mean that only the macros that are actually called would be generated, potentially saving compilation time
+    // That may potentially also allow the Reflect() overload for primitives to be written as actual code in here instead of added from the metaprogram?
     Reflect :: ( d: *$T/interface struct {}, r: *Reflector ) -> ReflectResult #expand
     {
         st := cast(*Type_Info_Struct) type_info(T);
@@ -128,7 +129,9 @@ ReflectedTypeInfo :: struct
     type:             Type;
     startOffset:      s64;
     totalSize:        s64;      // Packed into 64 bits together with fieldCount (so 48 bits max)
-    currentFieldSize: s32;
+    currentFieldName: string;
+    currentFieldStartOffset: s64;
+    //currentFieldSize:        s64;      // Packed into 64 bits together with field id (so 48 bits max)
     fieldCount:       u16;
 
     HeaderSize :: size_of(u64);
@@ -161,6 +164,9 @@ EndReflectType :: ( info: *ReflectedTypeInfo, r: *BinaryReflector )
     else
     {
         // Finish packed header and write it
+        // TODO FIXME Since all types are gonna be some other type's field except at the root,
+        // and since all skipping while reading is going to happen at the field level..
+        // wth are we even storing a total size for the type!?
         info.totalSize = r.buffer.size - info.startOffset;
         if info.totalSize > info.TotalSizeMax
         {
@@ -169,18 +175,10 @@ EndReflectType :: ( info: *ReflectedTypeInfo, r: *BinaryReflector )
             return;
         }
 
-        header: u64 = (info.fieldCount << info.TotalSizeBits) | ((cast(u64) info.totalSize) & info.TotalSizeMax);
+        header: u64 = (info.fieldCount << info.TotalSizeBits) | (cast(u64) info.totalSize);
         CopyFrom( *r.buffer, bytes_of( *header ), info.startOffset );
     }
 }
-
-BinaryField :: struct
-{
-    size:    s32;
-    id:      u16;
-    _padding: [2] u8;
-}
-#assert( offset_of( BinaryField, "_padding" ) == 6 );
 
 BeginReflectField :: ( fieldId: u16, name: string, info: *ReflectedTypeInfo, r: *BinaryReflector ) -> bool
 {
@@ -190,16 +188,37 @@ BeginReflectField :: ( fieldId: u16, name: string, info: *ReflectedTypeInfo, r: 
     }
     else
     {
+        // This should have been guaranteed during compile time
         assert( info.fieldCount < U16_MAX );
 
         info.fieldCount += 1;
-        // Push a 0 placeholder for the totalSize (will be computed in EndReflectField)
-
+        info.currentFieldName = name;
+        info.currentFieldStartOffset = r.buffer.size;
+        // Field headers are packed similar to type headers
+        // Push a 0 placeholder for the field size (will be computed in EndReflectField)
+        header: u64 = (fieldId << info.TotalSizeBits);
+        Push( *r.buffer, bytes_of( *header ) );
     }
     return true;
 }
 
 EndReflectField :: ( fieldId: u16, info: *ReflectedTypeInfo, r: *BinaryReflector )
 {
+    #if r.IsReading
+    {
 
+    }
+    else
+    {
+        // Write serialised field size at the correct placeholder offset
+        fieldSize := r.buffer.size - info.currentFieldStartOffset;
+        if fieldSize > info.TotalSizeMax
+        {
+            log_error( "Serialized field '%' does not fit in % bits!", info.currentFieldName, info.TotalSizeBits );
+            SetError( .Overflow, r );
+            return;
+        }
+
+        CopyFrom( *r.buffer, bytes_of( *fieldSize ), info.currentFieldStartOffset );
+    }
 }
