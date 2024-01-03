@@ -1,5 +1,6 @@
 #import "Compiler";
 #import "Bucket_Array";
+#import "Math";
 
 #load "basic.jai";
 #load "datatypes.jai";
@@ -15,10 +16,13 @@ Reflector :: struct ($IsReading: bool)
 ReflectResult :: enum
 {
     Ok;
+    Overflow;
+
     SomeError;
 }
 ReflectOk :: ReflectResult.Ok;
 
+// TODO Store the code location of the piece of data causing the error
 SetError :: ( error: ReflectResult, r: *Reflector )
 {
     // Only remember the first error location
@@ -37,7 +41,7 @@ SetError :: ( error: ReflectResult, r: *Reflector )
     Reflect :: ( d: *$T/interface struct {}, r: *Reflector ) -> ReflectResult #expand
     {
         st := cast(*Type_Info_Struct) type_info(T);
-        // TODO When writing, follow the order in the notes
+        // TODO When writing, *always order by offset in the source struct type* for cache friendliness
         // TODO When reading, the stream tells us the order of members to write to
         for m: st.members
         {
@@ -121,22 +125,19 @@ BinaryWriter :: struct
 
 ReflectedTypeInfo :: struct
 {
+    type:             Type;
     startOffset:      s64;
+    totalSize:        s64;      // Packed into 64 bits together with fieldCount (so 48 bits max)
     currentFieldSize: s32;
+    fieldCount:       u16;
 
-    Header :: struct
-    {
-        totalSize:      s32;
-        fieldCount:     u16;
-        _padding:       [2] u8;
-    }
-    using header:     Header;
-
-    HeaderSize :: #run offset_of( Header, "_padding" );
-    #assert( HeaderSize == 6 );
+    HeaderSize :: size_of(u64);
+    TotalSizeBits :: (HeaderSize - size_of(type_of(fieldCount))) * 8;
+    TotalSizeMax :: (1 << TotalSizeBits) - 1;
 }
 
-BeginReflectType :: ( info: *ReflectedTypeInfo, r: *BinaryReflector )
+// TODO Begin/End ReflectType should also probably return a bool!?
+BeginReflectType :: ( info: *ReflectedTypeInfo, type: Type, r: *BinaryReflector )
 {
     #if r.IsReading
     {
@@ -144,9 +145,10 @@ BeginReflectType :: ( info: *ReflectedTypeInfo, r: *BinaryReflector )
     }
     else
     {
-        info.startOffset = r.buffer.totalSize;
+        info.type = type;
+        info.startOffset = r.buffer.size;
         // make space to write a header later
-        PushEmpty( *r.buffer, ReflectedTypeInfo.HeaderSize );
+        PushEmpty( *r.buffer, info.HeaderSize );
     }
 }
 
@@ -158,7 +160,17 @@ EndReflectType :: ( info: *ReflectedTypeInfo, r: *BinaryReflector )
     }
     else
     {
+        // Finish packed header and write it
+        info.totalSize = r.buffer.size - info.startOffset;
+        if info.totalSize > info.TotalSizeMax
+        {
+            log_error( "Serialized size of type % does not fit in % bits!", info.type, info.TotalSizeBits );
+            SetError( .Overflow, r );
+            return;
+        }
 
+        header: u64 = (info.fieldCount << info.TotalSizeBits) | ((cast(u64) info.totalSize) & info.TotalSizeMax);
+        CopyFrom( *r.buffer, bytes_of( *header ), info.startOffset );
     }
 }
 
@@ -178,6 +190,8 @@ BeginReflectField :: ( fieldId: u16, name: string, info: *ReflectedTypeInfo, r: 
     }
     else
     {
+        assert( info.fieldCount < U16_MAX );
+
         info.fieldCount += 1;
         // Push a 0 placeholder for the totalSize (will be computed in EndReflectField)
 

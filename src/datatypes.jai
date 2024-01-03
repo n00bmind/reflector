@@ -1,37 +1,78 @@
 
 BufferBuilder :: struct( PageSize: int )
 {
+    #assert( IsPowerOf2( PageSize ) );
+
+    PageShift :: #run Log2( PageSize );
     Page :: [] u8;
 
-    totalSize: s64;
-    pageBuffer: [] Page;
+    size: s64;
+    pages: [] Page;
     // TODO Allocator
-
-    #assert( IsPowerOf2( PageSize ) );
 }
 
-PushEmpty :: ( using buffer: *BufferBuilder, size: int )
+FindPage :: inline ( using buffer: *BufferBuilder, index: int ) -> pageIndex: int, offsetInPage: int
 {
-    ResizeExtra( buffer, size );
+    pageIndex    := index >> buffer.PageShift;
+    offsetInPage := index & (buffer.PageSize - 1);
+
+    return pageIndex, offsetInPage;
 }
 
-ResizeExtra :: ( using buffer: *BufferBuilder, size: int )
+PushEmpty :: ( using buffer: *BufferBuilder, extraSize: int )
 {
-    Resize( buffer, buffer.totalSize + size );
+    ResizeExtra( buffer, extraSize );
 }
 
-Resize :: ( using buffer: *BufferBuilder, size: int )
+// Copy bytes from a source array and put them at a specific offset from the start of the given buffer
+// The resulting target bytes may straddle a page boundary, depending on the value of atOffset and the size of the source
+// If there aren't enough pages to hold the entire contents of the source array, the target buffer will be resized accordingly
+// If the given offset is bigger than the current size of the target buffer, the contents of the resulting "gap bytes" are unspecified.
+CopyFrom :: ( using buffer: *BufferBuilder, source: [] u8, atOffset: int )
 {
-    // Never shrink
-    if size <= totalSize
-        return;
+    assert( atOffset >= 0 );
 
-    totalSize += size;
+    if atOffset + source.count > buffer.size
+        Resize( buffer, atOffset + source.count );
 
-    // Check if we need an extra page
-    requiredPageCount := (totalSize + buffer.PageSize - 1) / buffer.PageSize;
-    if requiredPageCount > pageBuffer.count
-        GrowPageBuffer( buffer, requiredPageCount );
+    pageIndex, offsetInPage := FindPage( buffer, atOffset );
+
+    p := buffer.pages.data + pageIndex;
+    src := source.data;
+    remaining := source.count;
+
+    while remaining > 0
+    {
+        bytesToCopy := min( buffer.PageSize - offsetInPage, remaining );
+        Copy( src, p.data + offsetInPage, bytesToCopy );
+
+        offsetInPage = 0;
+        p += 1;
+        src += bytesToCopy;
+        remaining -= bytesToCopy;
+    }
+}
+
+ResizeExtra :: ( using buffer: *BufferBuilder, extraSize: int )
+{
+    Resize( buffer, buffer.size + extraSize );
+}
+
+Resize :: ( using buffer: *BufferBuilder, newSize: int )
+{
+    Reserve( buffer, newSize );
+    buffer.size = newSize;
+}
+
+ReserveExtra :: ( using buffer: *BufferBuilder, extraSize: int )
+{
+    Reserve( buffer, buffer.size + extraSize );
+}
+
+Reserve :: ( using buffer: *BufferBuilder, newCapacity: int )
+{
+    requiredPageCount := (newCapacity + buffer.PageSize - 1) / buffer.PageSize;
+    GrowPageBuffer( buffer, requiredPageCount );
 }
 
 #scope_file
@@ -39,18 +80,18 @@ Resize :: ( using buffer: *BufferBuilder, size: int )
 GrowPageBuffer :: ( using buffer: *BufferBuilder, pageCount: int )
 {
     // Never shrink
-    if pageCount <= pageBuffer.count
+    if pageCount <= pages.count
         return;
 
     // TODO Update compiler for new signature
-    newBuffer, _ := NewArray( pageCount, buffer.Page, initialized = false );
+    newPages, _ := NewArray( pageCount, buffer.Page, initialized = false );
 
-    for it, i: pageBuffer
-        newBuffer[i] = pageBuffer[i];
+    for it, i: pages
+        newPages[i] = pages[i];
 
-    for i: pageBuffer.count .. pageCount-1
-        newBuffer[i], _ = NewArray( buffer.PageSize, u8, initialized = false );
+    for i: pages.count .. pageCount-1
+        newPages[i], _ = NewArray( buffer.PageSize, u8, initialized = false );
 
-    pageBuffer = newBuffer;
+    pages = newPages;
 }
 

@@ -2,6 +2,7 @@
 #import "Compiler";
 #import "System";
 #import "String";
+#import "Math";
 
 build :: ()
 {
@@ -159,12 +160,13 @@ GenReflectFunction :: ( st: *Type_Info_Struct, w: Workspace ) -> string
     append( *globalBuilder, tprint( "Reflect :: ( d: *%, r: *Reflector ) -> ReflectResult\n", st.name ) );
     append( *globalBuilder, "{\n" );
     append( *globalBuilder, "    info: ReflectedTypeInfo;\n" );
-    append( *globalBuilder, "    BeginReflectType( *info, r );\n" );
+    append( *globalBuilder, tprint( "    BeginReflectType( *info, %, r );\n", st.name ) );
     append( *globalBuilder, "    defer EndReflectType( *info, r );\n" );
     append( *globalBuilder, "    \n" );
 
     // TODO Skip constants, usings, procedures? etc
     // TODO TODO Check discovered layout against a persisted one from last compilation
+    // FIXME We'd need the code node of each member for more accurate location reporting in compiler_report
     for m: st.members
     {
         // Parse field id
@@ -175,7 +177,6 @@ GenReflectFunction :: ( st: *Type_Info_Struct, w: Workspace ) -> string
 
         if !idArgs
         {
-            // FIXME We'd need the code node of the member for more accurate location reporting
             compiler_report( "'id' note requires a u16 argument (in parenthesis)", compiler_get_struct_location( w, st ) );
             return "";
         }
@@ -184,10 +185,16 @@ GenReflectFunction :: ( st: *Type_Info_Struct, w: Workspace ) -> string
             // TODO Show "some args ignored" warning
         }
 
-        fieldId, idOk, _ := string_to_int( idArgs[0], 10, u16 );
+        // NOTE string_to_int does not currently check for overflows if a small type is specified
+        fieldId, idOk, _ := string_to_int( idArgs[0], 10 );
         if !idOk
         {
-            // TODO Error out and stop compilation
+            compiler_report( "Unable to parse field 'id' argument into a u16", compiler_get_struct_location( w, st ) );
+            return "";
+        }
+        else if fieldId > U16_MAX
+        {
+            compiler_report( "Field 'id' argument is too big", compiler_get_struct_location( w, st ) );
             return "";
         }
 
@@ -197,7 +204,8 @@ GenReflectFunction :: ( st: *Type_Info_Struct, w: Workspace ) -> string
         append( *globalBuilder, tprint( "    ReflectField( *d.%, %, \"%\", *info, r );\n", m.name, fieldId, m.name ) );
     }
 
-    append(*globalBuilder, "    return ReflectOk;\n");
+    // TODO Test that this correctly returns any errors set in EndReflectType
+    append(*globalBuilder, "    return r.error;\n");
     append(*globalBuilder, "}\n");
 
     return builder_to_string( *globalBuilder );
