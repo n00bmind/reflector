@@ -57,7 +57,7 @@ build :: ()
         add_build_file( "src/test.jai", w );
     }
 
-    MessageLoop( w );
+    //MessageLoop( w );
 
     compiler_end_intercept(w);
 }
@@ -153,7 +153,7 @@ GetNoteArgs :: ( type: Type_Info_Struct_Member, name: string ) -> noteFound: boo
     return false, .[];
 }
 
-GenReflectFunction :: ( st: *Type_Info_Struct, w: Workspace ) -> string
+GenReflectFunction :: ( st: *Type_Info_Struct, w: Workspace, body_only: bool = false ) -> string
 {
     defer free_buffers( *globalBuilder );
 

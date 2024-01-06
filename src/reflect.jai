@@ -1,6 +1,7 @@
 #import "Compiler";
 #import "Bucket_Array";
 #import "Math";
+#import "String";
 
 #load "basic.jai";
 #load "datatypes.jai";
@@ -28,6 +29,111 @@ SetError :: ( error: ReflectResult, r: *Reflector )
     // Only remember the first error location
     if r.error != ReflectOk
         r.error = error;
+}
+
+
+Reflect :: inline ( d: *$T, r: *Reflector ) -> ReflectResult
+#modify
+{
+    ti := cast(*Type_Info) T;
+    return ti.type != .STRUCT;
+}
+{
+    #if r.IsReading
+        return ReflectOk;
+    else
+        return ReflectResult.SomeError;
+}
+
+globalBuilder: String_Builder;
+
+// NOTE Returns a temporary array
+// TODO Polymorph and extract to bricks
+GetNoteArgs :: ( type: Type_Info_Struct_Member, name: string ) -> noteFound: bool, args: []string
+{
+    for type.notes
+    {
+        if starts_with( it, name )
+        {
+            // Does it have any arguments
+            if it.count > name.count && it[name.count] == #char "("
+            {
+                // TODO Improve reporting of malformed arg expressions
+                // Get substring up until closing parens
+                argsFound, argString, _ := split_from_left( slice( it, name.count + 1, it.count ), #char ")" );
+                if !argsFound
+                    return false, .[];
+
+                // Parse args as comma separated strings
+                // Weird cast required to get the 'fast' single char overload
+                args := split( argString, cast(u8) #char ",", temp );
+                return true, args;
+            }
+            else
+                return true, .[];
+        }
+    }
+    return false, .[];
+}
+
+GenReflectFunction :: ( st: *Type_Info_Struct, w: Workspace ) -> string
+{
+    defer free_buffers( *globalBuilder );
+
+    //append( *globalBuilder, tprint( "Reflect :: ( d: *%, r: *Reflector ) -> ReflectResult\n", st.name ) );
+    //append( *globalBuilder, "{\n" );
+    append( *globalBuilder, "    info: ReflectedTypeInfo;\n" );
+    append( *globalBuilder, tprint( "    BeginReflectType( *info, %, r );\n", st.name ) );
+    append( *globalBuilder, "    defer EndReflectType( *info, r );\n" );
+    append( *globalBuilder, "    \n" );
+
+    // TODO Skip constants, usings, procedures? etc
+    // TODO TODO Check discovered layout against a persisted one from last compilation
+    // FIXME We'd need the code node of each member for more accurate location reporting in compiler_report
+    // TODO When writing, *always order by offset in the source struct type* for cache friendliness
+    // TODO When reading, the stream tells us the order of members to write to, but assume memory order too
+    for m: st.members
+    {
+        // Parse field id
+        idFound, idArgs := GetNoteArgs( m, "id" );
+        if !idFound
+            // This guy is not serialised
+            continue;
+
+        if !idArgs
+        {
+            compiler_report( "'id' note requires a u16 argument (in parenthesis)", compiler_get_struct_location( w, st ) );
+            return "";
+        }
+        else if idArgs.count > 1
+        {
+            // TODO Show "some args ignored" warning
+        }
+
+        // NOTE string_to_int does not currently check for overflows if a small type is specified
+        fieldId, idOk, _ := string_to_int( idArgs[0], 10 );
+        if !idOk
+        {
+            compiler_report( "Unable to parse field 'id' argument into a u16", compiler_get_struct_location( w, st ) );
+            return "";
+        }
+        else if fieldId > U16_MAX
+        {
+            compiler_report( "Field 'id' argument is too big", compiler_get_struct_location( w, st ) );
+            return "";
+        }
+
+        // TODO Parse optional name attribute (& more..)
+
+        print( "+%. %: % (%)  '%'\n", m.offset_in_bytes, m.name, type_to_string( m.type ), m.type.runtime_size, m.notes );
+        append( *globalBuilder, tprint( "    ReflectField( *d.%, %, \"%\", *info, r );\n", m.name, fieldId, m.name ) );
+    }
+
+    // TODO Test that this correctly returns any errors set in EndReflectType
+    append(*globalBuilder, "    return r.error;\n");
+    //append(*globalBuilder, "}\n");
+
+    return builder_to_string( *globalBuilder );
 }
 
 #if 0
@@ -72,6 +178,13 @@ SetError :: ( error: ReflectResult, r: *Reflector )
 
         return ReflectOk;
     }
+}
+
+Reflect :: ( d: *$T/interface struct {}, r: *Reflector ) -> ReflectResult
+{
+    // TODO Doing things this way means a new #run happens everytime we invoke this function, hence the same code is inserted more than once
+    // So we probably want to keep a chached mapping of type_info to generated string
+    #insert #run GenReflectFunction( type_info( T ), -1 );
 }
 
 // TODO When benchmarking, test making a custom overload for BinaryReflectors that tries to streamline this as much as possible
