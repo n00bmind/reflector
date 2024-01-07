@@ -32,19 +32,6 @@ SetError :: ( error: ReflectResult, r: *Reflector )
 }
 
 
-Reflect :: inline ( d: *$T, r: *Reflector ) -> ReflectResult
-#modify
-{
-    ti := cast(*Type_Info) T;
-    return ti.type != .STRUCT;
-}
-{
-    #if r.IsReading
-        return ReflectOk;
-    else
-        return ReflectResult.SomeError;
-}
-
 globalBuilder: String_Builder;
 
 // NOTE Returns a temporary array
@@ -257,7 +244,10 @@ BeginReflectType :: ( info: *ReflectedTypeInfo, type: Type, r: *BinaryReflector 
 {
     #if r.IsReading
     {
-
+        // TODO A total size for the type can be used here to check that the total size of the type does not exceed the remainder
+        // of the buffer, so that we don't have to do that check everytime we read a single small element inside said type
+        // Even better would be to only do this check on root types (so only the first time we go through this function in a given tree),
+        // then perhaps do an additional assert at the very end (but how do we detect those situations!?)
     }
     else
     {
@@ -288,7 +278,7 @@ EndReflectType :: ( info: *ReflectedTypeInfo, r: *BinaryReflector )
             return;
         }
 
-        header: u64 = (info.fieldCount << info.TotalSizeBits) | (cast(u64) info.totalSize);
+        header: u64 = ((cast(u64) info.fieldCount) << info.TotalSizeBits) | (cast(u64) info.totalSize);
         CopyFrom( *r.buffer, bytes_of( *header ), info.startOffset );
     }
 }
@@ -308,8 +298,9 @@ BeginReflectField :: ( fieldId: u16, name: string, info: *ReflectedTypeInfo, r: 
         info.currentFieldName = name;
         info.currentFieldStartOffset = r.buffer.size;
         // Field headers are packed similar to type headers
+        // FIXME This is really wasteful. Replace with a separate offsets table per type (check flatbuffers format?)
         // Push a 0 placeholder for the field size (will be computed in EndReflectField)
-        header: u64 = (fieldId << info.TotalSizeBits);
+        header: u64 = (cast(u64) fieldId) << info.TotalSizeBits;
         Push( *r.buffer, bytes_of( *header ) );
     }
     return true;
@@ -332,6 +323,43 @@ EndReflectField :: ( fieldId: u16, info: *ReflectedTypeInfo, r: *BinaryReflector
             return;
         }
 
-        CopyFrom( *r.buffer, bytes_of( *fieldSize ), info.currentFieldStartOffset );
+        sizeDatum := bytes_of( *fieldSize );
+        // Ensure we don't overwrite the existing fieldId
+        sizeDatum.count = info.TotalSizeBits / 8;
+        CopyFrom( *r.buffer, sizeDatum, info.currentFieldStartOffset );
     }
 }
+
+ReflectRawBytes :: inline ( d: [] u8, r: *Reflector )
+{
+    #if r.IsReading
+    {
+
+    }
+    else
+    {
+        Push( *r.buffer, d );
+    }
+}
+
+IsPrimitiveType :: ( T: Type ) -> bool
+{
+    ti := cast(*Type_Info) T;
+    return ti.type == .INTEGER || ti.type == .FLOAT || ti.type == .BOOL;
+}
+
+Reflect :: inline ( d: *$T, r: *Reflector ) -> ReflectResult
+#modify
+{
+    ti := cast(*Type_Info) T;
+    return ti.type != .STRUCT;
+}
+{
+    #if #run IsPrimitiveType( T )
+    {
+        // Just write the raw bytes
+        ReflectRawBytes( bytes_of( d ), r );
+    }
+    return ReflectOk;
+}
+

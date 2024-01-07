@@ -11,6 +11,7 @@ main :: ()
 
     result := Reflect( *m, *writer );
     print( "Writer result: %\n", result );
+    print( "Wrote % bytes\n", writer.buffer.size );
 
     result  = Reflect( *m, *reader );
     print( "Reader result: %\n", result );
