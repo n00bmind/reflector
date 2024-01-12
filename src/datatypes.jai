@@ -29,18 +29,18 @@ PushEmpty :: ( using buffer: *BufferBuilder, extraSize: int )
     ResizeExtra( buffer, extraSize );
 }
 
-// Copy bytes from a source array and put them at a specific offset from the start of the given buffer
-// The resulting target bytes may straddle a page boundary, depending on the value of atOffset and the size of the source
-// If there aren't enough pages to hold the entire contents of the source array, the target buffer will be resized accordingly
-// If the given offset is bigger than the current size of the target buffer, the contents of the resulting "gap bytes" are unspecified.
-CopyFrom :: ( using buffer: *BufferBuilder, source: [] u8, atOffset: int )
+// Copy bytes from a source array and put them at a specific offset from the start of the given builder
+// The resulting target bytes may straddle a page boundary, depending on the value of tgtOffset and the size of the source
+// If there aren't enough pages to hold the entire contents of the source array, the target builder will be resized accordingly
+// If tgtOffset is bigger than the current size of the target builder, the contents of the resulting "gap bytes" are unspecified.
+CopyFrom :: ( using buffer: *BufferBuilder, source: [] u8, tgtOffset: int )
 {
-    assert( atOffset >= 0 );
+    assert( tgtOffset >= 0 );
 
-    if atOffset + source.count > buffer.size
-        Resize( buffer, atOffset + source.count );
+    if tgtOffset + source.count > buffer.size
+        Resize( buffer, tgtOffset + source.count );
 
-    pageIndex, offsetInPage := FindPage( buffer, atOffset );
+    pageIndex, offsetInPage := FindPage( buffer, tgtOffset );
 
     p := buffer.pages.data + pageIndex;
     src := source.data;
@@ -54,6 +54,31 @@ CopyFrom :: ( using buffer: *BufferBuilder, source: [] u8, atOffset: int )
         offsetInPage = 0;
         p += 1;
         src += bytesToCopy;
+        remaining -= bytesToCopy;
+    }
+}
+
+// Copy bytes to a target array, optionally starting at a specific offset from the start of the given source builder
+// Only data up to the end of the builder will be copied, so if srcOffset + target.count is bigger than the current size of the
+// source builder, the remaining bytes in target are left untouched.
+CopyTo :: ( using buffer: *BufferBuilder, target: [] u8, srcOffset: int = 0 )
+{
+    assert( tgtOffset >= 0 );
+
+    pageIndex, offsetInPage := FindPage( buffer, tgtOffset );
+
+    p := buffer.pages.data + pageIndex;
+    tgt := target.data;
+    remaining := min( target.count, buffer.size - srcOffset );
+
+    while remaining > 0
+    {
+        bytesToCopy := min( buffer.PageSize - offsetInPage, remaining );
+        Copy( p.data + offsetInPage, tgt, bytesToCopy );
+
+        offsetInPage = 0;
+        p += 1;
+        tgt += bytesToCopy;
         remaining -= bytesToCopy;
     }
 }

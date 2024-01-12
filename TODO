@@ -1,4 +1,9 @@
 
 - Make the generator available as a metaprogram plugin, so people don't have to write their own metaprogram to use this
   https://github.com/Ivo-Balbaert/The_Way_to_Jai/blob/main/book/36_Plugins.md
+  * Seems like we won't need to touch the metaprogram after all?
+
+- Once the basic functionality is in place, as a fun excersice, it'd be cool to make additional output formats (besides ImGui & json),
+  like for example, output a 010 Editor template so that the binary data can be easily inspected & edited.
+  https://www.sweetscape.com/010editor/templates.html
 

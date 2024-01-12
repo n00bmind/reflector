@@ -171,6 +171,7 @@ Reflect :: ( d: *$T/interface struct {}, r: *Reflector ) -> ReflectResult
 {
     // TODO Doing things this way means a new #run happens everytime we invoke this function, hence the same code is inserted more than once
     // So we probably want to keep a chached mapping of type_info to generated string
+    // (for the 'production-ready' generators we need this anyway to generate the type descriptor tables)
     #insert #run GenReflectFunction( type_info( T ), -1 );
 }
 
@@ -205,15 +206,23 @@ BinaryReflector :: struct( $IsReading2: bool )
 {
     #as using reflector: Reflector( IsReading2 );
 
-    bufferHead: s64;
 }
 
 BinaryReader :: struct
 {
     #as using binary: BinaryReflector( true );
 
-    // TODO Polymorph buffer type?
     buffer: [] u8;
+    bufferHead: s64;
+}
+
+// Always ensure we're not trying to read past the end of the buffer
+// If you call this with an exhausted buffer, no copy will occur
+ReadAndAdvance :: inline ( using r: *BinaryReader, d: *$T )
+{
+    bytesToCopy := min( size_of(T), r.buffer.count - r.bufferHead );
+    Copy( r.buffer.data + r.bufferHead, *d, bytesToCopy );
+    r.bufferHead += bytesToCopy;
 }
 
 BinaryWriter :: struct
@@ -244,10 +253,15 @@ BeginReflectType :: ( info: *ReflectedTypeInfo, type: Type, r: *BinaryReflector 
 {
     #if r.IsReading
     {
-        // TODO A total size for the type can be used here to check that the total size of the type does not exceed the remainder
-        // of the buffer, so that we don't have to do that check everytime we read a single small element inside said type
-        // Even better would be to only do this check on root types (so only the first time we go through this function in a given tree),
-        // then perhaps do an additional assert at the very end (but how do we detect those situations!?)
+        // NOTE The total size of the type is used here as a sanity check to ensure that we don't overflow the actual size of the buffer
+        // Since our main focus is read speed, we don't want to have to do a similar check everytime we read every single small piece of
+        // data inside each type (even though we could, since each field also stores its size so that we can skip over it if needed).
+        // TODO 
+        // So we only store this total size for the root type of the serialised hierarchy (i.e. at the beginning of the binary blob),
+        // since storing it for any other subtypes would be redundant with the information that individual fields already store.
+        // TODO Reorganize this comment!
+        header: u64;
+        ReadAndAdvance( r, *header );
     }
     else
     {

@@ -4,19 +4,6 @@ Megabytes :: 1024 * Kilobytes;
 Gigabytes :: 1024 * Megabytes;
 
 
-Copy :: inline ( source: *void, dest: *void, count: s64 )
-{
-    memcpy( dest, source, count );
-}
-Compare :: inline (a: *void, b: *void, count: s64) -> s16
-{
-    return memcmp( a, b, count );
-}
-Set :: inline (dest: *void, value: u8, count: s64)
-{
-    memset( dest, value, count );
-}
-
 offset_of :: ( $T: Type, memberName: string ) -> s64
 {
     for type_info(T).members {
@@ -33,6 +20,31 @@ bytes_of :: ( v: *$T ) -> [] u8
     result.data = cast(*u8) v;
     result.count = size_of(T);
     return result;
+}
+
+
+Copy :: inline ( source: *void, target: *void, count: s64 )
+{
+    memcpy( target, source, count );
+}
+Compare :: inline ( a: *void, b: *void, count: s64 ) -> s16
+{
+    return memcmp( a, b, count );
+}
+Set :: inline ( target: *void, value: u8, count: s64 )
+{
+    memset( target, value, count );
+}
+
+#if 0
+{
+    // Copy bytes to a target array, optionally starting at a specific offset from the start of the given source array
+    // Only data up to the end of the source array will be copied, so if srcOffset + target.count is bigger than the current size of the
+    // source array, the remaining bytes in target are left untouched.
+    Copy :: ( source: [] u8, target: [] u8, srcOffset: int = 0 )
+    {
+
+    }
 }
 
 IsPowerOf2 :: inline ( value: $T ) -> bool
