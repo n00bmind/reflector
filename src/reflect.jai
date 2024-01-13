@@ -253,37 +253,45 @@ BeginReflectType :: ( info: *ReflectedTypeInfo, type: Type, r: *BinaryReflector 
 {
     #if r.IsReading
     {
-        // NOTE The total size of the type is used here as a sanity check to ensure that we don't overflow the actual size of the buffer
-        // Since our main focus is read speed, we don't want to have to do a similar check everytime we read every single small piece of
-        // data inside each type (even though we could, since each field also stores its size so that we can skip over it if needed).
-        // TODO 
-        // So we only store this total size for the root type of the serialised hierarchy (i.e. at the beginning of the binary blob),
-        // since storing it for any other subtypes would be redundant with the information that individual fields already store.
-        // TODO Reorganize this comment!
+        info.startOffset = r.bufferHead;
+
         header: u64;
         ReadAndAdvance( r, *header );
+        info.totalSize  = header &  info.TotalSizeMax;
+        info.fieldCount = header >> info.TotalSizeBits;
+
+        endOffset := info.startOffset + info.totalSize;
+        if info.totalSize <= info.HeaderSize || r.bufferHead + info.totalSize > r.buffer.count
+        {
+            log_error( "Root serialized type has an invalid size: % (read buffer size is %)", info.totalSize, r.buffer.count );
+            SetError( .BadData, r );
+            // FIXME Really we want to abort the whole process here (so return a bool!)
+            return false;
+        }
     }
     else
     {
         info.type = type;
         info.startOffset = r.buffer.size;
-        // make space to write a header later
+
+        // Make space to write a header at the very end
         PushEmpty( *r.buffer, info.HeaderSize );
     }
 }
 
 EndReflectType :: ( info: *ReflectedTypeInfo, r: *BinaryReflector )
 {
+    r.scopeDepth -= 1;
+
     #if r.IsReading
     {
-
+        // no-op
+        // TODO 
+        // (reference code did reposition the bufferHead at info.startOffset + info.totalSize, but I dont think that's necessary?)
     }
     else
     {
         // Finish packed header and write it
-        // TODO FIXME Since all types are gonna be some other type's field except at the root,
-        // and since all skipping while reading is going to happen at the field level..
-        // wth are we even storing a total size for the type!?
         info.totalSize = r.buffer.size - info.startOffset;
         if info.totalSize > info.TotalSizeMax
         {
@@ -312,7 +320,7 @@ BeginReflectField :: ( fieldId: u16, name: string, info: *ReflectedTypeInfo, r: 
         info.currentFieldName = name;
         info.currentFieldStartOffset = r.buffer.size;
         // Field headers are packed similar to type headers
-        // FIXME This is really wasteful. Replace with a separate offsets table per type (check flatbuffers format?)
+        // TODO This is really wasteful. Replace with a separate offsets table per type (check flatbuffers format?)
         // Push a 0 placeholder for the field size (will be computed in EndReflectField)
         header: u64 = (cast(u64) fieldId) << info.TotalSizeBits;
         Push( *r.buffer, bytes_of( *header ) );
