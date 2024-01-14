@@ -143,7 +143,8 @@ GetNoteArgs :: ( type: Type_Info_Struct_Member, name: string ) -> noteFound: boo
 
                 // Parse args as comma separated strings
                 // Weird cast required to get the 'fast' single char overload
-                args := split( argString, cast(u8) #char ",", temp );
+                // New 'context arguments' make it look even prettier
+                args := split( argString, cast(u8) #char ",",, allocator = temp );
                 return true, args;
             }
             else

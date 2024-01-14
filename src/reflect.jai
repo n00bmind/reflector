@@ -17,6 +17,7 @@ Reflector :: struct ($IsReading: bool)
 ReflectResult :: enum
 {
     Ok;
+    BadData;
     Overflow;
 
     SomeError;
@@ -53,7 +54,8 @@ GetNoteArgs :: ( type: Type_Info_Struct_Member, name: string ) -> noteFound: boo
 
                 // Parse args as comma separated strings
                 // Weird cast required to get the 'fast' single char overload
-                args := split( argString, cast(u8) #char ",", temp );
+                // New 'context arguments' make it look even prettier
+                args := split( argString, cast(u8) #char ",",, allocator = temp );
                 return true, args;
             }
             else
@@ -70,9 +72,10 @@ GenReflectFunction :: ( st: *Type_Info_Struct, w: Workspace ) -> string
     //append( *globalBuilder, tprint( "Reflect :: ( d: *%, r: *Reflector ) -> ReflectResult\n", st.name ) );
     //append( *globalBuilder, "{\n" );
     append( *globalBuilder, "    info: ReflectedTypeInfo;\n" );
-    append( *globalBuilder, tprint( "    BeginReflectType( *info, %, r );\n", st.name ) );
-    append( *globalBuilder, "    defer EndReflectType( *info, r );\n" );
-    append( *globalBuilder, "    \n" );
+    append( *globalBuilder, tprint( "    if BeginReflectType( *info, %, r )\n", st.name ) );
+    append( *globalBuilder, "    {\n" );
+    append( *globalBuilder, "        defer EndReflectType( *info, r );\n" );
+    append( *globalBuilder, "        \n" );
 
     // TODO Skip constants, usings, procedures? etc
     // TODO TODO Check discovered layout against a persisted one from last compilation
@@ -113,11 +116,12 @@ GenReflectFunction :: ( st: *Type_Info_Struct, w: Workspace ) -> string
         // TODO Parse optional name attribute (& more..)
 
         print( "+%. %: % (%)  '%'\n", m.offset_in_bytes, m.name, type_to_string( m.type ), m.type.runtime_size, m.notes );
-        append( *globalBuilder, tprint( "    ReflectField( *d.%, %, \"%\", *info, r );\n", m.name, fieldId, m.name ) );
+        append( *globalBuilder, tprint( "        ReflectField( *d.%, %, \"%\", *info, r );\n", m.name, fieldId, m.name ) );
     }
 
+    append( *globalBuilder, "    }\n" );
     // TODO Test that this correctly returns any errors set in EndReflectType
-    append(*globalBuilder, "    return r.error;\n");
+    append( *globalBuilder, "    return r.error;\n" );
     //append(*globalBuilder, "}\n");
 
     return builder_to_string( *globalBuilder );
@@ -206,6 +210,7 @@ BinaryReflector :: struct( $IsReading2: bool )
 {
     #as using reflector: Reflector( IsReading2 );
 
+    scopeDepth: s64;
 }
 
 BinaryReader :: struct
@@ -218,11 +223,30 @@ BinaryReader :: struct
 
 // Always ensure we're not trying to read past the end of the buffer
 // If you call this with an exhausted buffer, no copy will occur
+Read :: inline ( using r: *BinaryReader, d: *$T )
+{
+    bytesToCopy := min( size_of(T), buffer.count - r.bufferHead );
+    Copy( buffer.data + r.bufferHead, d, bytesToCopy );
+}
+
+Read :: inline ( using r: *BinaryReader, d: *$T, offset: s64 )
+{
+    bytesToCopy := min( size_of(T), buffer.count - offset );
+    Copy( buffer.data + offset, d, bytesToCopy );
+}
+
 ReadAndAdvance :: inline ( using r: *BinaryReader, d: *$T )
 {
-    bytesToCopy := min( size_of(T), r.buffer.count - r.bufferHead );
-    Copy( r.buffer.data + r.bufferHead, *d, bytesToCopy );
-    r.bufferHead += bytesToCopy;
+    bytesToCopy := min( size_of(T), buffer.count - bufferHead );
+    Copy( buffer.data + bufferHead, d, bytesToCopy );
+    bufferHead += bytesToCopy;
+}
+
+ReadAndAdvance :: inline ( using r: *BinaryReader, d: [] u8 )
+{
+    bytesToCopy := min( d.count, buffer.count - bufferHead );
+    Copy( buffer.data + bufferHead, d.data, bytesToCopy );
+    bufferHead += bytesToCopy;
 }
 
 BinaryWriter :: struct
@@ -235,13 +259,13 @@ BinaryWriter :: struct
 
 ReflectedTypeInfo :: struct
 {
-    type:             Type;
-    startOffset:      s64;
-    totalSize:        s64;      // Packed into 64 bits together with fieldCount (so 48 bits max)
-    currentFieldName: string;
+    type:                    Type;
+    startOffset:             s64;
+    totalSize:               s64;       // Packed into 64 bits together with fieldCount (so 48 bits max)
+    currentFieldName:        string;
     currentFieldStartOffset: s64;
-    //currentFieldSize:        s64;      // Packed into 64 bits together with field id (so 48 bits max)
-    fieldCount:       u16;
+    currentFieldSize:        s64;       // Packed into 64 bits together with field id (so 48 bits max)
+    fieldCount:              u16;
 
     HeaderSize :: size_of(u64);
     TotalSizeBits :: (HeaderSize - size_of(type_of(fieldCount))) * 8;
@@ -249,24 +273,29 @@ ReflectedTypeInfo :: struct
 }
 
 // TODO Begin/End ReflectType should also probably return a bool!?
-BeginReflectType :: ( info: *ReflectedTypeInfo, type: Type, r: *BinaryReflector )
+BeginReflectType :: ( info: *ReflectedTypeInfo, type: Type, r: *BinaryReflector ) -> bool
 {
     #if r.IsReading
     {
         info.startOffset = r.bufferHead;
 
-        header: u64;
-        ReadAndAdvance( r, *header );
-        info.totalSize  = header &  info.TotalSizeMax;
-        info.fieldCount = header >> info.TotalSizeBits;
+        ReadAndAdvance( r, *info.totalSize );
+        info.fieldCount = cast(u16)(info.totalSize >> info.TotalSizeBits);
+        info.totalSize &= info.TotalSizeMax;
 
-        endOffset := info.startOffset + info.totalSize;
-        if info.totalSize <= info.HeaderSize || r.bufferHead + info.totalSize > r.buffer.count
+        // Sanity check the total serialized size of the root type against the size of the read buffer
+        // TODO Add a final verification pass and a checksum on write + Serialise/Deserialise wrappers that deal with them for when we're
+        // feeling paranoid (or need to deal with over-the-wire stuff etc).
+        if r.scopeDepth == 0
         {
-            log_error( "Root serialized type has an invalid size: % (read buffer size is %)", info.totalSize, r.buffer.count );
-            SetError( .BadData, r );
-            // FIXME Really we want to abort the whole process here (so return a bool!)
-            return false;
+            endOffset := info.startOffset + info.totalSize;
+            if info.totalSize <= info.HeaderSize || r.bufferHead + info.totalSize > r.buffer.count
+            {
+                log_error( "Root serialized type has an invalid size: % (read buffer size is %)", info.totalSize, r.buffer.count );
+                SetError( .BadData, r );
+                // FIXME Really we want to abort the whole process here (so return a bool!)
+                return false;
+            }
         }
     }
     else
@@ -277,6 +306,9 @@ BeginReflectType :: ( info: *ReflectedTypeInfo, type: Type, r: *BinaryReflector 
         // Make space to write a header at the very end
         PushEmpty( *r.buffer, info.HeaderSize );
     }
+
+    r.scopeDepth += 1;
+    return true;
 }
 
 EndReflectType :: ( info: *ReflectedTypeInfo, r: *BinaryReflector )
@@ -285,9 +317,7 @@ EndReflectType :: ( info: *ReflectedTypeInfo, r: *BinaryReflector )
 
     #if r.IsReading
     {
-        // no-op
-        // TODO 
-        // (reference code did reposition the bufferHead at info.startOffset + info.totalSize, but I dont think that's necessary?)
+        r.bufferHead = info.startOffset + info.totalSize;
     }
     else
     {
@@ -305,11 +335,65 @@ EndReflectType :: ( info: *ReflectedTypeInfo, r: *BinaryReflector )
     }
 }
 
+BinaryFieldSize :: size_of(u64);
+
 BeginReflectField :: ( fieldId: u16, name: string, info: *ReflectedTypeInfo, r: *BinaryReflector ) -> bool
 {
     #if r.IsReading
     {
+        // If we're past the current bounds for the type, this field is missing (not an error)
+        typeEndOffset := info.startOffset + info.totalSize;
+        if( r.bufferHead >= typeEndOffset )
+            return false;
 
+        info.currentFieldStartOffset = r.bufferHead;
+
+        Read( r, *info.currentFieldSize );
+
+        decodedFieldId := cast(u16)(info.currentFieldSize >> info.TotalSizeBits);
+        info.currentFieldSize &= info.TotalSizeMax;
+
+        if decodedFieldId == fieldId
+        {
+            // We're good to go
+        }
+        else
+        {
+            curOffset := r.bufferHead + info.currentFieldSize;
+
+            // Iterate over all fields in this type looking for the one we want
+            found := false;
+            for 0 .. info.fieldCount - 1
+            {
+                // If we're right at the end of the type, then we've validly read the last field, so start over from the first one
+                if( curOffset >= typeEndOffset )
+                    curOffset = info.startOffset + info.HeaderSize;
+
+                decodedFieldSize: s64;
+                Read( r, *decodedFieldSize, curOffset );
+
+                decodedFieldId = cast(u16)(decodedFieldSize >> info.TotalSizeBits);
+                if decodedFieldId == fieldId
+                {
+                    r.bufferHead = curOffset;
+                    found = true;
+                    break;
+                }
+
+                decodedFieldSize &= info.TotalSizeMax;
+
+                // Move to next field
+                curOffset += decodedFieldSize;
+            }
+            if( !found )
+            {
+                // This field is missing, so skip past it
+                return false;
+            }
+        }
+
+        r.bufferHead += BinaryFieldSize;
+        return true;
     }
     else
     {
@@ -325,6 +409,7 @@ BeginReflectField :: ( fieldId: u16, name: string, info: *ReflectedTypeInfo, r: 
         header: u64 = (cast(u64) fieldId) << info.TotalSizeBits;
         Push( *r.buffer, bytes_of( *header ) );
     }
+
     return true;
 }
 
@@ -332,7 +417,8 @@ EndReflectField :: ( fieldId: u16, info: *ReflectedTypeInfo, r: *BinaryReflector
 {
     #if r.IsReading
     {
-
+        // Set the read head to ensure it's correct
+        r.bufferHead = info.currentFieldStartOffset + info.currentFieldSize;
     }
     else
     {
@@ -356,7 +442,7 @@ ReflectRawBytes :: inline ( d: [] u8, r: *Reflector )
 {
     #if r.IsReading
     {
-
+        ReadAndAdvance( r, d );
     }
     else
     {
@@ -379,8 +465,12 @@ Reflect :: inline ( d: *$T, r: *Reflector ) -> ReflectResult
 {
     #if #run IsPrimitiveType( T )
     {
-        // Just write the raw bytes
+        // Just read/write the raw bytes
         ReflectRawBytes( bytes_of( d ), r );
+    }
+    else
+    {
+        // TODO 
     }
     return ReflectOk;
 }
