@@ -12,15 +12,16 @@ Equipment :: struct
     //#place weapon: Weapon;
 }
 
+// TODO Warn that no reflection notes are present at all, so nothing will get reflected
 Vec3 :: struct
 {
     x, y, z: float;
 }
 
-Monster :: struct @reflect
+Monster :: struct
 {
-    //pos: Vec3;                  @0
-    mana: s16 = 150;            @id(1)
+    pos: Vec3;                  @id(1)
+    mana: s16 = 150;            @id(2)
     //hp: s16 = 100;              @2
     //name: string;               @3
     ////friendly: bool = false;     @4

@@ -63,9 +63,9 @@ CopyFrom :: ( using buffer: *BufferBuilder, source: [] u8, tgtOffset: int )
 // source builder, the remaining bytes in target are left untouched.
 CopyTo :: ( using buffer: *BufferBuilder, target: [] u8, srcOffset: int = 0 )
 {
-    assert( tgtOffset >= 0 );
+    assert( srcOffset >= 0 );
 
-    pageIndex, offsetInPage := FindPage( buffer, tgtOffset );
+    pageIndex, offsetInPage := FindPage( buffer, srcOffset );
 
     p := buffer.pages.data + pageIndex;
     tgt := target.data;
@@ -81,6 +81,15 @@ CopyTo :: ( using buffer: *BufferBuilder, target: [] u8, srcOffset: int = 0 )
         tgt += bytesToCopy;
         remaining -= bytesToCopy;
     }
+}
+
+// NOTE Returned array is temporary by default
+ToArray :: ( using buffer: *BufferBuilder, allocator: Allocator = temp ) -> [] u8
+{
+    result, _ := NewArray( size, u8, false,, allocator );
+    CopyTo( buffer, result );
+
+    return result;
 }
 
 ResizeExtra :: ( using buffer: *BufferBuilder, extraSize: int )

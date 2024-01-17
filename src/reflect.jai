@@ -288,8 +288,7 @@ BeginReflectType :: ( info: *ReflectedTypeInfo, type: Type, r: *BinaryReflector 
         // feeling paranoid (or need to deal with over-the-wire stuff etc).
         if r.scopeDepth == 0
         {
-            endOffset := info.startOffset + info.totalSize;
-            if info.totalSize <= info.HeaderSize || r.bufferHead + info.totalSize > r.buffer.count
+            if info.totalSize <= info.HeaderSize || info.startOffset + info.totalSize > r.buffer.count
             {
                 log_error( "Root serialized type has an invalid size: % (read buffer size is %)", info.totalSize, r.buffer.count );
                 SetError( .BadData, r );
@@ -456,6 +455,7 @@ IsPrimitiveType :: ( T: Type ) -> bool
     return ti.type == .INTEGER || ti.type == .FLOAT || ti.type == .BOOL;
 }
 
+// TODO How do we make it so that any Reflect() functions are user customizable?
 Reflect :: inline ( d: *$T, r: *Reflector ) -> ReflectResult
 #modify
 {
@@ -471,6 +471,7 @@ Reflect :: inline ( d: *$T, r: *Reflector ) -> ReflectResult
     else
     {
         // TODO 
+        #assert( false && "Not implemented" );
     }
     return ReflectOk;
 }
