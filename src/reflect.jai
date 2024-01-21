@@ -65,7 +65,17 @@ GetNoteArgs :: ( type: Type_Info_Struct_Member, name: string ) -> noteFound: boo
     return false, .[];
 }
 
-GenReflectFunction :: ( st: *Type_Info_Struct, w: Workspace ) -> string
+// #insert #run this FROM COMPILE-TIME
+GetCodeNodesFor :: ( ident: string ) -> string #compile_time
+{
+    defer free_buffers( *globalBuilder );
+
+    append( *globalBuilder, tprint( "compiler_get_nodes( % );\n", ident ) );
+
+    return builder_to_string( *globalBuilder );
+}
+
+GenReflectFunction :: ( T: Type, st: *Type_Info_Struct, w: Workspace = -1 ) -> string #expand #compile_time
 {
     defer free_buffers( *globalBuilder );
 
@@ -77,11 +87,42 @@ GenReflectFunction :: ( st: *Type_Info_Struct, w: Workspace ) -> string
     append( *globalBuilder, "        defer EndReflectType( *info, r );\n" );
     append( *globalBuilder, "        \n" );
 
-    // TODO Skip constants, usings, procedures? etc
+    // TODO First of all, see if this is a 'packed' struct
+
+    // Can't use 'st.name' here, as that'd require a closure
+    root, expressions := #insert #run GetCodeNodesFor( type_info(T).name );
+    print( "Found ROOT expr % of kind %\n", root, root.kind );
+    for expressions {
+        //print( "Found expr % of kind %, file %, line %:\t\t", it, it.kind, it.location.enclosing_load.fully_pathed_filename, it.location.l0 );
+        print( "Found expr % of kind %:\t\t", it, it.kind );
+        if it.kind ==
+        {
+        case .TYPE_DEFINITION;
+            ex := cast(*Code_Type_Definition) it;
+            print( "%", type_to_string( ex.info ) );
+        case .DECLARATION;
+            ex := cast(*Code_Declaration) it;
+            print( "type_inst %, expr %", ex.type_inst, ex.expression );
+        case .IDENT;
+            ex := cast(*Code_Ident) it;
+            print( "'%', decl %", ex.name, ex.resolved_declaration );
+        case .TYPE_INSTANTIATION;
+            ex := cast(*Code_Type_Instantiation) it;
+            print( "'%', expr %", type_to_string( ex.result ), ex.type_valued_expression );
+        case .STRUCT;
+            ex := cast(*Code_Struct) it;
+            print( "type defn '%'", type_to_string( ex.defined_type ) );
+        }
+        print( "\n" ); 
+    }
+
+
+    // TODO Skip constants (negative offset_in_bytes), usings, procedures? etc
     // TODO TODO Check discovered layout against a persisted one from last compilation
     // FIXME We'd need the code node of each member for more accurate location reporting in compiler_report
     // TODO When writing, *always order by offset in the source struct type* for cache friendliness
     // TODO When reading, the stream tells us the order of members to write to, but assume memory order too
+    reflectedMembers := 0;
     for m: st.members
     {
         // Parse field id
@@ -117,7 +158,13 @@ GenReflectFunction :: ( st: *Type_Info_Struct, w: Workspace ) -> string
 
         print( "+%. %: % (%)  '%'\n", m.offset_in_bytes, m.name, type_to_string( m.type ), m.type.runtime_size, m.notes );
         append( *globalBuilder, tprint( "        ReflectField( *d.%, %, \"%\", *info, r );\n", m.name, fieldId, m.name ) );
+
+        reflectedMembers += 1;
     }
+
+    // TODO If no member fields have been identified, and this is not a 'packed' struct, default to in-memory-order consecutive automatic ids,
+    // so that if the user decides in the future he wants to change the default, old data can still be read
+
 
     append( *globalBuilder, "    }\n" );
     // TODO Test that this correctly returns any errors set in EndReflectType
@@ -127,56 +174,22 @@ GenReflectFunction :: ( st: *Type_Info_Struct, w: Workspace ) -> string
     return builder_to_string( *globalBuilder );
 }
 
-#if 0
-{
-    // This seems to allow creating a specific overload for structs without using #modify
-    // TODO I have the feeling I should be able to do everything via a macro that looks something like this (but perhaps passing a code node)
-    // TODO Can functions & macros be part of the same overload set!? (looks like in principle they could..)
+// Generate the body of the function based on the type it was called with
+// This way we only generate the overloads that are actually needed
+// This signature seems to allow creating a specific overload for structs without using #modify
+// TODO When writing, *always order by offset in the source struct type* for cache friendliness
+// TODO When reading, the stream tells us the order of members to write to, which probably means the function body is the same
+// for all types, and we just HAVE TO do dynamic dispatch? Although, we can have a (compiletime) table of field id to member typeinfo
+// and recover a typed pointer to the member doing something like:
+                //M := get_root_type( m.type );
+                //Reflect( GetMemberValueAs( m, d, M ), r );
 
-    // TODO Could we just '#insert GenReflectFunction()' in here? (removing the function header from that, just leaving the ReflectField calls..)
-    // That'd mean that only the macros that are actually called would be generated, potentially saving compilation time
-    // That may potentially also allow the Reflect() overload for primitives to be written as actual code in here instead of added from the metaprogram?
-    Reflect :: ( d: *$T/interface struct {}, r: *Reflector ) -> ReflectResult #expand
-    {
-        st := cast(*Type_Info_Struct) type_info(T);
-        // TODO When writing, *always order by offset in the source struct type* for cache friendliness
-        // TODO When reading, the stream tells us the order of members to write to
-        for m: st.members
-        {
-            // TODO This is a constant member, we should skip it.. (and if it has an id note, emit an error / warning)
-            assert( m.offset_in_bytes >= 0, "Member '%' has offset %", m.name, m.offset_in_bytes );
-
-            //if( ReflectMemberBegin( m, r ) )
-            {
-                GetMemberValueAs :: ( m: *Type_Info_Struct_Member, d: *$T/interface struct {}, $M: Type ) -> *M
-                {
-                    p := cast(*u8)d + m.offset_in_bytes;
-                    return cast(*M)p;
-                }
-
-                // TODO How to dynamically cast this back to the actual member type so it goes to the appropriate Reflect() overload?
-                M := get_root_type( m.type );
-                print( "Member '%' is of type %\n", m.name, M );
-                //result := Reflect( GetMemberValueAs( m, d, M ), r );
-                //if( result != ReflectOk )
-                //SetError( result, r );
-
-                ////ReflectMemberEnd( m, r );
-                //if( result != ReflectOk )
-                //return result;
-            }
-        }
-
-        return ReflectOk;
-    }
-}
-
-Reflect :: ( d: *$T/interface struct {}, r: *Reflector ) -> ReflectResult
+Reflect :: ( d: *$T/interface struct {}, r: *Reflector ) -> ReflectResult //#expand
 {
     // TODO Doing things this way means a new #run happens everytime we invoke this function, hence the same code is inserted more than once
     // So we probably want to keep a chached mapping of type_info to generated string
     // (for the 'production-ready' generators we need this anyway to generate the type descriptor tables)
-    #insert #run GenReflectFunction( type_info( T ), -1 );
+    #insert #run GenReflectFunction( T, type_info( T ) );
 }
 
 // TODO When benchmarking, test making a custom overload for BinaryReflectors that tries to streamline this as much as possible

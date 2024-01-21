@@ -36,16 +36,13 @@ Set :: inline ( target: *void, value: u8, count: s64 )
     memset( target, value, count );
 }
 
-#if 0
-{
-    // Copy bytes to a target array, optionally starting at a specific offset from the start of the given source array
-    // Only data up to the end of the source array will be copied, so if srcOffset + target.count is bigger than the current size of the
-    // source array, the remaining bytes in target are left untouched.
-    Copy :: ( source: [] u8, target: [] u8, srcOffset: int = 0 )
-    {
 
-    }
+GetMemberValueAs :: ( m: *Type_Info_Struct_Member, d: *$T/interface struct {}, $M: Type ) -> *M
+{
+    p := cast(*u8)d + m.offset_in_bytes;
+    return cast(*M)p;
 }
+
 
 IsPowerOf2 :: inline ( value: $T ) -> bool
 {
