@@ -12,7 +12,6 @@ Equipment :: struct
     //#place weapon: Weapon;
 }
 
-// TODO Warn that no reflection notes are present at all, so nothing will get reflected
 Vec3 :: struct
 {
     x, y, z: float;

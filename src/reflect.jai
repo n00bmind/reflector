@@ -35,20 +35,44 @@ SetError :: ( error: ReflectResult, r: *Reflector )
 
 globalBuilder: String_Builder;
 
-// NOTE Returns a temporary array
-// TODO Polymorph and extract to bricks
-GetNoteArgs :: ( type: Type_Info_Struct_Member, name: string ) -> noteFound: bool, args: []string
+// #insert #run this FROM COMPILE-TIME
+// TODO Probably should be cached / deduplicated?
+// TODO Extract to bricks
+GetCodeNodesFor :: ( ident: string ) -> string #compile_time
 {
-    for type.notes
+    return tprint( "compiler_get_nodes( % );\n", ident );
+}
+
+FindMemberDecl :: ( m: Type_Info_Struct_Member, members: [] *Code_Scope_Entry ) -> *Code_Declaration
+{
+    for members
     {
-        if starts_with( it, name )
+        assert( it.kind == .DECLARATION );
+        decl := cast(*Code_Declaration) it;
+        if equal( decl.name, m.name )
+            return decl;
+    }
+    return null;
+}
+
+// NOTE Returns a temporary args array
+// TODO Convert string args based on names & types array
+// TODO Extract to bricks
+ParseNote :: ( name: string, notes: [] *Code_Note, argNames: [] string = .[], argTypes: [] Type = .[] ) -> noteFound: bool, args: []string
+{
+    assert( argNames.count == argTypes.count );
+
+    for notes
+    {
+        noteStr := it.text;
+        if starts_with( noteStr, name )
         {
             // Does it have any arguments
-            if it.count > name.count && it[name.count] == #char "("
+            if noteStr.count > name.count && noteStr[name.count] == #char "("
             {
                 // TODO Improve reporting of malformed arg expressions
                 // Get substring up until closing parens
-                argsFound, argString, _ := split_from_left( slice( it, name.count + 1, it.count ), #char ")" );
+                argsFound, argString, _ := split_from_left( slice( noteStr, name.count + 1, noteStr.count ), #char ")" );
                 if !argsFound
                     return false, .[];
 
@@ -65,19 +89,22 @@ GetNoteArgs :: ( type: Type_Info_Struct_Member, name: string ) -> noteFound: boo
     return false, .[];
 }
 
-// #insert #run this FROM COMPILE-TIME
-GetCodeNodesFor :: ( ident: string ) -> string #compile_time
-{
-    defer free_buffers( *globalBuilder );
-
-    append( *globalBuilder, tprint( "compiler_get_nodes( % );\n", ident ) );
-
-    return builder_to_string( *globalBuilder );
-}
-
 GenReflectFunction :: ( T: Type, st: *Type_Info_Struct, w: Workspace = -1 ) -> string #expand #compile_time
 {
     defer free_buffers( *globalBuilder );
+
+    // Find the code node for the given type declaration, so we can access exact node locations for error reporting
+    // Can't use 'st.name' here, as that'd require a closure
+    rootNode, _ := #insert #run GetCodeNodesFor( type_info(T).name );
+    assert( rootNode.kind == .IDENT );
+
+    rootDecl := (cast(*Code_Ident) rootNode).resolved_declaration;
+    exprNode := rootDecl.expression;
+    assert( exprNode.kind == .STRUCT, "Reflected expression node should be a .STRUCT (got %)\n", exprNode.kind );
+
+    stNode := cast(*Code_Struct) exprNode;
+    assert( stNode.defined_type == st, "Defined type in reflected expression doesn't match given type (wanted %, got %)\n", st, stNode.defined_type );
+
 
     //append( *globalBuilder, tprint( "Reflect :: ( d: *%, r: *Reflector ) -> ReflectResult\n", st.name ) );
     //append( *globalBuilder, "{\n" );
@@ -87,84 +114,72 @@ GenReflectFunction :: ( T: Type, st: *Type_Info_Struct, w: Workspace = -1 ) -> s
     append( *globalBuilder, "        defer EndReflectType( *info, r );\n" );
     append( *globalBuilder, "        \n" );
 
-    // TODO First of all, see if this is a 'packed' struct
-
-    // Can't use 'st.name' here, as that'd require a closure
-    root, expressions := #insert #run GetCodeNodesFor( type_info(T).name );
-    print( "Found ROOT expr % of kind %\n", root, root.kind );
-    for expressions {
-        //print( "Found expr % of kind %, file %, line %:\t\t", it, it.kind, it.location.enclosing_load.fully_pathed_filename, it.location.l0 );
-        print( "Found expr % of kind %:\t\t", it, it.kind );
-        if it.kind ==
-        {
-        case .TYPE_DEFINITION;
-            ex := cast(*Code_Type_Definition) it;
-            print( "%", type_to_string( ex.info ) );
-        case .DECLARATION;
-            ex := cast(*Code_Declaration) it;
-            print( "type_inst %, expr %", ex.type_inst, ex.expression );
-        case .IDENT;
-            ex := cast(*Code_Ident) it;
-            print( "'%', decl %", ex.name, ex.resolved_declaration );
-        case .TYPE_INSTANTIATION;
-            ex := cast(*Code_Type_Instantiation) it;
-            print( "'%', expr %", type_to_string( ex.result ), ex.type_valued_expression );
-        case .STRUCT;
-            ex := cast(*Code_Struct) it;
-            print( "type defn '%'", type_to_string( ex.defined_type ) );
-        }
-        print( "\n" ); 
-    }
-
-
-    // TODO Skip constants (negative offset_in_bytes), usings, procedures? etc
-    // TODO TODO Check discovered layout against a persisted one from last compilation
-    // FIXME We'd need the code node of each member for more accurate location reporting in compiler_report
-    // TODO When writing, *always order by offset in the source struct type* for cache friendliness
-    // TODO When reading, the stream tells us the order of members to write to, but assume memory order too
     reflectedMembers := 0;
-    for m: st.members
+    // First of all, see if this is a 'packed' struct
+    isPacked, _ := ParseNote( "packed", stNode.notes );
+    if isPacked
     {
-        // Parse field id
-        idFound, idArgs := GetNoteArgs( m, "id" );
-        if !idFound
-            // This guy is not serialised
+        // For packed structs, just reflect their contents as is
+        // TODO How do we express this operation in a Reflector-independent way?
+    }
+    else
+    {
+        // TODO Skip constants (negative offset_in_bytes), usings, procedures? etc
+        // TODO TODO Check discovered layout against a persisted one from last compilation
+        // FIXME We'd need the code node of each member for more accurate location reporting in compiler_report
+        // TODO When writing, *always order by offset in the source struct type* for cache friendliness
+        // TODO When reading, the stream tells us the order of members to write to, but assume memory order too
+        for m: st.members
+        {
+            decl := FindMemberDecl( m, stNode.block.members );
+            assert( decl != null, "Couldn't find member decl node for '%'\n", m.name );
+
+            // Parse field id
+            idFound, idArgs := ParseNote( "id", decl.notes );
+            if !idFound
+                // This guy is not serialised
             continue;
 
-        if !idArgs
-        {
-            compiler_report( "'id' note requires a u16 argument (in parenthesis)", compiler_get_struct_location( w, st ) );
-            return "";
-        }
-        else if idArgs.count > 1
-        {
-            // TODO Show "some args ignored" warning
-        }
+            if !idArgs
+            {
+                compiler_report( "'id' note requires a u16 argument (in parenthesis)", compiler_get_struct_location( w, st ) );
+                return "";
+            }
+            else if idArgs.count > 1
+            {
+                // TODO Show "some args ignored" warning
+            }
 
-        // NOTE string_to_int does not currently check for overflows if a small type is specified
-        fieldId, idOk, _ := string_to_int( idArgs[0], 10 );
-        if !idOk
-        {
-            compiler_report( "Unable to parse field 'id' argument into a u16", compiler_get_struct_location( w, st ) );
-            return "";
+            // NOTE string_to_int does not currently check for overflows if a small type is specified
+            fieldId, idOk, _ := string_to_int( idArgs[0], 10 );
+            if !idOk
+            {
+                compiler_report( "Unable to parse field 'id' argument into a u16", compiler_get_struct_location( w, st ) );
+                return "";
+            }
+            else if fieldId > U16_MAX
+            {
+                compiler_report( "Field 'id' argument is too big", compiler_get_struct_location( w, st ) );
+                return "";
+            }
+
+            // TODO Parse optional name attribute (& more..)
+
+            print( "+%. %: % (%)  '%'\n", m.offset_in_bytes, m.name, type_to_string( m.type ), m.type.runtime_size, m.notes );
+            append( *globalBuilder, tprint( "        ReflectField( *d.%, %, \"%\", *info, r );\n", m.name, fieldId, m.name ) );
+
+            reflectedMembers += 1;
         }
-        else if fieldId > U16_MAX
-        {
-            compiler_report( "Field 'id' argument is too big", compiler_get_struct_location( w, st ) );
-            return "";
-        }
-
-        // TODO Parse optional name attribute (& more..)
-
-        print( "+%. %: % (%)  '%'\n", m.offset_in_bytes, m.name, type_to_string( m.type ), m.type.runtime_size, m.notes );
-        append( *globalBuilder, tprint( "        ReflectField( *d.%, %, \"%\", *info, r );\n", m.name, fieldId, m.name ) );
-
-        reflectedMembers += 1;
     }
 
     // TODO If no member fields have been identified, and this is not a 'packed' struct, default to in-memory-order consecutive automatic ids,
     // so that if the user decides in the future he wants to change the default, old data can still be read
-
+    if !isPacked && reflectedMembers == 0
+    {
+        // TODO Highlight just the very first letter of the struct name.. can we do better?
+        compiler_report( tprint( "Structured type '%' will be serialised but has no serialisation notes. Will default to memory-order fields.", st.name ),
+                         make_location( rootDecl ), mode = .WARNING );
+    }
 
     append( *globalBuilder, "    }\n" );
     // TODO Test that this correctly returns any errors set in EndReflectType
