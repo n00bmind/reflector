@@ -12,15 +12,15 @@ Equipment :: struct
     //#place weapon: Weapon;
 }
 
-Vec3 :: struct
+Vec3 :: struct @reflect_packed
 {
     x, y, z: float;
 }
 
 Monster :: struct
 {
-    pos: Vec3;                  @id(1)
-    mana: s16 = 150;            @id(2)
+    pos: Vec3;                  @reflect_field(1)
+    mana: s16 = 150;            @reflect_field(2)
     //hp: s16 = 100;              @2
     //name: string;               @3
     ////friendly: bool = false;     @4

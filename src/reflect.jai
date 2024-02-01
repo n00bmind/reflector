@@ -55,17 +55,31 @@ FindMemberDecl :: ( m: Type_Info_Struct_Member, members: [] *Code_Scope_Entry ) 
     return null;
 }
 
+// NOTE All notes can be written as specified or with a 'reflect_' prefix before the given name
 // NOTE Returns a temporary args array
 // TODO Convert string args based on names & types array
 // TODO Extract to bricks
-ParseNote :: ( name: string, notes: [] *Code_Note, argNames: [] string = .[], argTypes: [] Type = .[] ) -> noteFound: bool, args: []string
+ParseNote :: ( noteName: string, notes: [] *Code_Note, argNames: [] string = .[], argTypes: [] Type = .[] ) -> noteFound: bool, args: []string
 {
     assert( argNames.count == argTypes.count );
+
+    name := noteName;
+    prefixedName := tprint( "reflect_%", name );
 
     for notes
     {
         noteStr := it.text;
+        found := false;
+
         if starts_with( noteStr, name )
+            found = true;
+        else if starts_with( noteStr, prefixedName )
+        {
+            found = true;
+            name = prefixedName;
+        }
+
+        if found
         {
             // Does it have any arguments
             if noteStr.count > name.count && noteStr[name.count] == #char "("
@@ -117,10 +131,12 @@ GenReflectFunction :: ( T: Type, st: *Type_Info_Struct, w: Workspace = -1 ) -> s
     reflectedMembers := 0;
     // First of all, see if this is a 'packed' struct
     isPacked, _ := ParseNote( "packed", stNode.notes );
-    if isPacked
+    if isPacked 
     {
         // For packed structs, just reflect their contents as is
-        // TODO How do we express this operation in a Reflector-independent way?
+        // FIXME This should have been (optionally) handled by the ReflectField at the parent
+        // TODO If we've gotten here, it just means the current serialiser does not support 'packed'
+        append( *globalBuilder, tprint( "        ReflectPacked( *d.%, r );\n", st.name ) );
     }
     else
     {
@@ -135,23 +151,24 @@ GenReflectFunction :: ( T: Type, st: *Type_Info_Struct, w: Workspace = -1 ) -> s
             assert( decl != null, "Couldn't find member decl node for '%'\n", m.name );
 
             // Parse field id
-            idFound, idArgs := ParseNote( "id", decl.notes );
-            if !idFound
+            fieldFound, fieldArgs := ParseNote( "field", decl.notes );
+            if !fieldFound
                 // This guy is not serialised
             continue;
 
-            if !idArgs
+            if !fieldArgs
             {
-                compiler_report( "'id' note requires a u16 argument (in parenthesis)", compiler_get_struct_location( w, st ) );
+                // TODO This is also way too verbose for my liking, and imo any metaprogram errors should be annotated by which metaprogram emitted them!
+                compiler_report( "'field' note requires a u16 'id' argument (in parenthesis)", compiler_get_struct_location( w, st ) );
                 return "";
             }
-            else if idArgs.count > 1
+            else if fieldArgs.count > 1
             {
                 // TODO Show "some args ignored" warning
             }
 
             // NOTE string_to_int does not currently check for overflows if a small type is specified
-            fieldId, idOk, _ := string_to_int( idArgs[0], 10 );
+            fieldId, idOk, _ := string_to_int( fieldArgs[0], 10 );
             if !idOk
             {
                 compiler_report( "Unable to parse field 'id' argument into a u16", compiler_get_struct_location( w, st ) );
@@ -176,7 +193,8 @@ GenReflectFunction :: ( T: Type, st: *Type_Info_Struct, w: Workspace = -1 ) -> s
     // so that if the user decides in the future he wants to change the default, old data can still be read
     if !isPacked && reflectedMembers == 0
     {
-        // TODO Highlight just the very first letter of the struct name.. can we do better?
+        // TODO This is way too verbose, and also highlights just the very first letter of the struct name.. Not very usable, as it'd be somewhat expected to have more than one of these
+        // Instead just display a summary line per warning for our purposes
         compiler_report( tprint( "Structured type '%' will be serialised but has no serialisation notes. Will default to memory-order fields.", st.name ),
                          make_location( rootDecl ), mode = .WARNING );
     }
@@ -465,7 +483,7 @@ EndReflectField :: ( fieldId: u16, info: *ReflectedTypeInfo, r: *BinaryReflector
     }
 }
 
-ReflectRawBytes :: inline ( d: [] u8, r: *Reflector )
+ReflectRawBytes :: inline ( d: [] u8, r: *BinaryReflector )
 {
     #if r.IsReading
     {
@@ -484,7 +502,7 @@ IsPrimitiveType :: ( T: Type ) -> bool
 }
 
 // TODO How do we make it so that any Reflect() functions are user customizable?
-Reflect :: inline ( d: *$T, r: *Reflector ) -> ReflectResult
+Reflect :: inline ( d: *$T, r: *BinaryReflector ) -> ReflectResult
 #modify
 {
     ti := cast(*Type_Info) T;
@@ -502,5 +520,10 @@ Reflect :: inline ( d: *$T, r: *Reflector ) -> ReflectResult
         #assert( false && "Not implemented" );
     }
     return ReflectOk;
+}
+
+ReflectPacked :: inline ( d: *$T, r: *BinaryReflector ) -> ReflectResult
+{
+    ReflectRawBytes( bytes_of( d ), r );
 }
 
