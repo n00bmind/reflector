@@ -7,7 +7,8 @@
 #load "datatypes.jai";
 
 
-Reflector :: struct ($IsReading: bool)
+// TODO Turn polymorph args into ReflectorFlags, most likely
+Reflector :: struct ($IsReading: bool, $SupportsPackedTypes: bool = false)
 {
     IsWriting :: !IsReading;
 
@@ -55,6 +56,11 @@ FindMemberDecl :: ( m: Type_Info_Struct_Member, members: [] *Code_Scope_Entry ) 
     return null;
 }
 
+FieldArgs :: struct
+{
+    name: string;
+    value: Any;
+}
 // NOTE All notes can be written as specified or with a 'reflect_' prefix before the given name
 // NOTE Returns a temporary args array
 // TODO Convert string args based on names & types array
@@ -103,12 +109,27 @@ ParseNote :: ( noteName: string, notes: [] *Code_Note, argNames: [] string = .[]
     return false, .[];
 }
 
-GenReflectFunction :: ( T: Type, st: *Type_Info_Struct, w: Workspace = -1 ) -> string #expand #compile_time
+FieldFlags :: enum_flags u8
+{
+    Packed;
+}
+FieldInfo :: struct
+{
+    //member: *Type_Info_Struct_Member;
+    decl: *Code_Declaration;
+    //args: [..] FieldArgs;
+    id: u16;
+    name: string;
+    flags: FieldFlags;
+}
+
+GenReflectFunction :: ( T: Type, st: *Type_Info_Struct, reflector: $ReflectorType, w: Workspace = -1 ) -> string #expand #compile_time
 {
     defer free_buffers( *globalBuilder );
 
     // Find the code node for the given type declaration, so we can access exact node locations for error reporting
     // Can't use 'st.name' here, as that'd require a closure
+    // TODO Actually check second return value for ambiguities etc
     rootNode, _ := #insert #run GetCodeNodesFor( type_info(T).name );
     assert( rootNode.kind == .IDENT );
 
@@ -120,6 +141,10 @@ GenReflectFunction :: ( T: Type, st: *Type_Info_Struct, w: Workspace = -1 ) -> s
     assert( stNode.defined_type == st, "Defined type in reflected expression doesn't match given type (wanted %, got %)\n", st, stNode.defined_type );
 
 
+    // First of all, check if this type was marked as 'packed'
+    // TODO 
+    print( "#### type_of(r) == %, SupportsPackedTypes: %\n", reflector, reflector.SupportsPackedTypes );
+
     //append( *globalBuilder, tprint( "Reflect :: ( d: *%, r: *Reflector ) -> ReflectResult\n", st.name ) );
     //append( *globalBuilder, "{\n" );
     append( *globalBuilder, "    info: ReflectedTypeInfo;\n" );
@@ -128,75 +153,90 @@ GenReflectFunction :: ( T: Type, st: *Type_Info_Struct, w: Workspace = -1 ) -> s
     append( *globalBuilder, "        defer EndReflectType( *info, r );\n" );
     append( *globalBuilder, "        \n" );
 
-    reflectedMembers := 0;
-    // First of all, see if this is a 'packed' struct
-    isPacked, _ := ParseNote( "packed", stNode.notes );
-    if isPacked 
+    reflectedFieldCount := 0;
+    // Do a first pass parsing notes & their arguments, and populate a (decl-order?) array with all the info
+    // TODO Special processing for constants (negative offset_in_bytes), usings, procedures? etc
+    // TODO TODO Check discovered layout against a persisted one from last compilation
+    // TODO When writing, *always order by offset in the source struct type* for cache friendliness
+    // TODO When reading, the stream tells us the order of members to write to, but assume memory order too
+    fieldInfo: [] FieldInfo = NewArray( st.members.count, FieldInfo );
+    for m, index: st.members
     {
-        // For packed structs, just reflect their contents as is
-        // FIXME This should have been (optionally) handled by the ReflectField at the parent
-        // TODO If we've gotten here, it just means the current serialiser does not support 'packed'
-        append( *globalBuilder, tprint( "        ReflectPacked( *d.%, r );\n", st.name ) );
-    }
-    else
-    {
-        // TODO Skip constants (negative offset_in_bytes), usings, procedures? etc
-        // TODO TODO Check discovered layout against a persisted one from last compilation
-        // FIXME We'd need the code node of each member for more accurate location reporting in compiler_report
-        // TODO When writing, *always order by offset in the source struct type* for cache friendliness
-        // TODO When reading, the stream tells us the order of members to write to, but assume memory order too
-        for m: st.members
-        {
-            decl := FindMemberDecl( m, stNode.block.members );
-            assert( decl != null, "Couldn't find member decl node for '%'\n", m.name );
+        info := *fieldInfo[index];
+        //info.member = m;
 
-            // Parse field id
-            fieldFound, fieldArgs := ParseNote( "field", decl.notes );
-            if !fieldFound
-                // This guy is not serialised
+        decl := FindMemberDecl( m, stNode.block.members );
+        assert( decl != null, "Couldn't find member decl node for '%'\n", m.name );
+        info.decl = decl;
+
+        // Parse field id
+        fieldFound, fieldArgs := ParseNote( "field", decl.notes );
+        if !fieldFound
+            // This guy is not marked for serialization
             continue;
 
-            if !fieldArgs
-            {
-                // TODO This is also way too verbose for my liking, and imo any metaprogram errors should be annotated by which metaprogram emitted them!
-                compiler_report( "'field' note requires a u16 'id' argument (in parenthesis)", compiler_get_struct_location( w, st ) );
-                return "";
-            }
-            else if fieldArgs.count > 1
-            {
-                // TODO Show "some args ignored" warning
-            }
-
-            // NOTE string_to_int does not currently check for overflows if a small type is specified
-            fieldId, idOk, _ := string_to_int( fieldArgs[0], 10 );
-            if !idOk
-            {
-                compiler_report( "Unable to parse field 'id' argument into a u16", compiler_get_struct_location( w, st ) );
-                return "";
-            }
-            else if fieldId > U16_MAX
-            {
-                compiler_report( "Field 'id' argument is too big", compiler_get_struct_location( w, st ) );
-                return "";
-            }
-
-            // TODO Parse optional name attribute (& more..)
-
-            print( "+%. %: % (%)  '%'\n", m.offset_in_bytes, m.name, type_to_string( m.type ), m.type.runtime_size, m.notes );
-            append( *globalBuilder, tprint( "        ReflectField( *d.%, %, \"%\", *info, r );\n", m.name, fieldId, m.name ) );
-
-            reflectedMembers += 1;
+        if !fieldArgs
+        {
+            // TODO This is also way too verbose for my liking, and imo any metaprogram errors should be annotated by which metaprogram emitted them!
+            compiler_report( "'field' note requires a u16 'id' argument (in parenthesis)", compiler_get_struct_location( w, st ) );
+            return "";
         }
+
+        // NOTE string_to_int does not currently check for overflows if a small type is specified
+        fieldId, idOk, _ := string_to_int( fieldArgs[0], 10 );
+        if !idOk
+        {
+            compiler_report( "Unable to parse field 'id' argument into a u16", compiler_get_struct_location( w, st ) );
+            return "";
+        }
+        else if fieldId <= 0
+        {
+            compiler_report( "Field 'id' must be a positive (non-zero) integer", compiler_get_struct_location( w, st ) );
+            return "";
+        }
+        else if fieldId > U16_MAX
+        {
+            compiler_report( "Field 'id' argument is too big", compiler_get_struct_location( w, st ) );
+            return "";
+        }
+
+        info.id = cast(u16)fieldId;
+
+        // Check if this is a 'packed' struct type
+        // TODO If fieldArgs contain the 'packed' flag already, then we don't need to do this..
+        if m.type.type == .STRUCT
+        {
+            fieldStructType  := cast(*Type_Info_Struct) m.type;
+            if contains( fieldStructType.notes, "packed" )
+                info.flags |= .Packed;
+        }
+
+        // TODO Parse optional name attribute etc.
+
+        reflectedFieldCount += 1;
     }
 
     // TODO If no member fields have been identified, and this is not a 'packed' struct, default to in-memory-order consecutive automatic ids,
     // so that if the user decides in the future he wants to change the default, old data can still be read
-    if !isPacked && reflectedMembers == 0
+    if reflectedFieldCount == 0
     {
-        // TODO This is way too verbose, and also highlights just the very first letter of the struct name.. Not very usable, as it'd be somewhat expected to have more than one of these
-        // Instead just display a summary line per warning for our purposes
-        compiler_report( tprint( "Structured type '%' will be serialised but has no serialisation notes. Will default to memory-order fields.", st.name ),
-                         make_location( rootDecl ), mode = .WARNING );
+        // Check if this is a 'packed' struct type
+        isPacked, _ := ParseNote( "packed", stNode.notes );
+        if !isPacked
+        {
+            // TODO This is way too verbose, and also highlights just the very first letter of the struct name.. Not very usable, as it'd be somewhat expected to have more than one of these
+            // Instead just display a summary line per warning for our purposes
+            compiler_report( tprint( "Structured type '%' will be serialised but has no serialisation notes. Will default to memory-order fields.", st.name ),
+                             make_location( rootDecl ), mode = .WARNING );
+        }
+    }
+
+    for m, index: st.members
+    {
+        info := *fieldInfo[index];
+
+        print( "+%. %: % (%)  '%'\n", m.offset_in_bytes, m.name, type_to_string( m.type ), m.type.runtime_size, m.notes );
+        append( *globalBuilder, tprint( "        ReflectField( *d.%, %, \"%\", *info, r );\n", m.name, info.id, m.name ) );
     }
 
     append( *globalBuilder, "    }\n" );
@@ -217,13 +257,35 @@ GenReflectFunction :: ( T: Type, st: *Type_Info_Struct, w: Workspace = -1 ) -> s
                 //M := get_root_type( m.type );
                 //Reflect( GetMemberValueAs( m, d, M ), r );
 
-Reflect :: ( d: *$T/interface struct {}, r: *Reflector ) -> ReflectResult //#expand
+Reflect :: ( d: *$T/interface struct {}, r: *Reflector ) -> ReflectResult
 {
     // TODO Doing things this way means a new #run happens everytime we invoke this function, hence the same code is inserted more than once
     // So we probably want to keep a chached mapping of type_info to generated string
     // (for the 'production-ready' generators we need this anyway to generate the type descriptor tables)
-    #insert #run GenReflectFunction( T, type_info( T ) );
+    // Note that according to how_to 100 though, this #run should only be invoked once for each type we pass in $T
+    // Do we see two because we pass both a reader and a writer in r for each type?
+    #insert #run GenReflectFunction( T, type_info( T ), type_of( r ) );
 }
+/* TODO FIXME The main way users would customize reflection for a type would be to write their own overload
+However currently, there seems to be a compiler issue (or it may be some feature I'm not properly understanding) that prevents correctly
+resolving a more-concrete polymorph overload when another argument (the Reflector in this case) is a polymorphic struct, even though
+what we're actually passing to it is a fully resolved concrete instance of it (BinaryReader or BinaryWriter)
+
+i.e. this is a compilation error at the root callsite:
+    Reflect :: ( d: *Monster, r: *Reflector ) -> ReflectResult
+    {
+        return .Ok;
+    }
+However, specifying a concrete instance of a Reflector is fine, i.e. this compiles:
+    Reflect :: ( d: *Monster, r: *BinaryReader ) -> ReflectResult
+    {
+        return .Ok;
+    }
+
+A similar issue occurs when trying to write an overload for a sub-type in the reflection tree hierarchy, i.e. Vec3 instead of Monster.
+This looks like a bug to me, as the compiler should have all the info to correctly give a higher score to the more-concrete overload
+(and in fact, it does if we remove the Reflector arg, or make it a concrete type)
+*/
 
 // TODO When benchmarking, test making a custom overload for BinaryReflectors that tries to streamline this as much as possible
 // NOTE Apparently there's a limit to macro recursion .. https://github.com/Jai-Community/Jai-Community-Library/wiki/Getting-Started#nested-macros
@@ -254,7 +316,7 @@ ReflectField :: ( field: Code, fieldId: u16, name: string, info: *ReflectedTypeI
 
 BinaryReflector :: struct( $IsReading2: bool )
 {
-    #as using reflector: Reflector( IsReading2 );
+    #as using reflector: Reflector( IsReading2, true );
 
     scopeDepth: s64;
 }
@@ -522,7 +584,7 @@ Reflect :: inline ( d: *$T, r: *BinaryReflector ) -> ReflectResult
     return ReflectOk;
 }
 
-ReflectPacked :: inline ( d: *$T, r: *BinaryReflector ) -> ReflectResult
+ReflectPacked :: inline ( d: *$T/interface struct {}, r: *BinaryReflector ) -> ReflectResult
 {
     ReflectRawBytes( bytes_of( d ), r );
 }

@@ -44,6 +44,19 @@ GetMemberValueAs :: ( m: *Type_Info_Struct_Member, d: *$T/interface struct {}, $
 }
 
 
+///// Arrays
+contains :: ( array: [] $T, value: T ) -> bool
+{
+    for array
+    {
+        if it == value
+            return true;
+    }
+    return false;
+}
+
+///// Math
+
 IsPowerOf2 :: inline ( value: $T ) -> bool
 {
     return value > 0 && (value & (value - 1)) == 0;
