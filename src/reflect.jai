@@ -257,6 +257,19 @@ GenReflectFunction :: ( T: Type, st: *Type_Info_Struct, reflector: $ReflectorTyp
                 //M := get_root_type( m.type );
                 //Reflect( GetMemberValueAs( m, d, M ), r );
 
+// NOTE Looking at the signature & body of this procedure, it might appear that what we're saying here is that we want many different
+// overloads of the same Reflect() function, all of them with the exact same signature (*all of them polymorphic on T*), but each with a
+// different body, and the compiler would then have to try to match them all one by one to whatever type we're passing, in essence
+// operating by 'duck typing' alone, which would be extremely inefficient and have the potential of having more than one overload end up
+// with identical bodies (and collide) if we ever try to pass two structs containing the same exact members with the same exact types.
+// HOWEVER that's not at all what's happening here. Instead a separate overloaded *instance* of the polymorph is being created, each
+// with its own inserted body, and with a signature matching only the concrete type that's being passed.
+// This can be easily demostrated with code like:
+//
+//    pos: Vec3;
+//    print( "Reflect() for type % is: %\n", type_of(pos),
+//           type_to_string( type_info(type_of( #procedure_of_call Reflect( *pos, *reflector ) )) ) );
+//
 Reflect :: ( d: *$T/interface struct {}, r: *Reflector ) -> ReflectResult
 {
     // TODO Doing things this way means a new #run happens everytime we invoke this function, hence the same code is inserted more than once
@@ -277,7 +290,7 @@ i.e. this is a compilation error at the root callsite:
         return .Ok;
     }
 However, specifying a concrete instance of a Reflector is fine, i.e. this compiles:
-    Reflect :: ( d: *Monster, r: *BinaryReader ) -> ReflectResult
+    Reflect :: ( d: *Monster, r: *BinaryWriter ) -> ReflectResult
     {
         return .Ok;
     }

@@ -16,6 +16,10 @@ Vec3 :: struct @reflect_packed
 {
     x, y, z: float;
 }
+Vecf :: struct
+{
+    x, y, z: float;
+}
 
 Monster :: struct
 {

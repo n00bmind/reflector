@@ -19,5 +19,21 @@ main :: ()
 
     equal := Compare( *mA, *mB, size_of(Monster) ) == 0;
     print( "Reflected type is %\n", ifx equal "EQUAL" else "NOT EQUAL" );
+
+
+
+    print( "\n\n___________\n" );
+    pos: Vec3;
+    print( "Reflect() for type % is: %\n", type_of(pos),
+           type_to_string( type_info(type_of( #procedure_of_call Reflect( *pos, *writer ) )) ) );
+    // FIXME compiler_get_nodes() if the type is not visible from reflect.jai (or something!?)
+    //Vecf :: struct
+    //{
+        //x, y, z: float;
+    //}
+    posf: Vecf;
+    print( "Reflect() for type % is: %\n", type_of(posf),
+           type_to_string( type_info(type_of( #procedure_of_call Reflect( *posf, *writer ) )) ) );
+
 }
 
