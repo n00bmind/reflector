@@ -225,6 +225,8 @@ GenReflectFunction :: ( T: Type, st: *Type_Info_Struct, reflector: $ReflectorTyp
                              make_location( rootDecl ), mode = .WARNING );
 
             //...
+            // TODO 
+            assert( false && "Not implemented" );
         }
 
         //append( *globalBuilder, tprint( "Reflect :: ( d: *%, r: *Reflector ) -> ReflectResult\n", st.name ) );
@@ -555,13 +557,28 @@ ReflectRawBytes :: inline ( d: [] u8, r: *BinaryReflector )
     }
 }
 
-IsPrimitiveType :: ( T: Type ) -> bool
+IsPrimitiveType :: ( ti: *Type_Info ) -> bool
 {
-    ti := cast(*Type_Info) T;
     return ti.type == .INTEGER || ti.type == .FLOAT || ti.type == .BOOL;
 }
 
-// TODO How do we make it so that any Reflect() functions are user customizable?
+IsArrayType :: ( ti: *Type_Info ) -> bool
+{
+    return ti.type == .ARRAY || ti.type == .STRING;
+}
+
+IsPrimitiveArrayType :: ( ti: *Type_Info ) -> bool
+{
+    if ti.type == .STRING
+        return true;
+
+    if ti.type != .ARRAY
+        return false;
+
+    tia := cast(*Type_Info_Array) ti;
+    return IsPrimitiveType( tia.element_type );
+}
+
 Reflect :: inline ( d: *$T, r: *BinaryReflector ) -> ReflectResult
 #modify
 {
@@ -569,10 +586,26 @@ Reflect :: inline ( d: *$T, r: *BinaryReflector ) -> ReflectResult
     return ti.type != .STRUCT;
 }
 {
-    #if #run IsPrimitiveType( T )
+    #if #run IsPrimitiveType( cast(*Type_Info) T )
     {
         // Just read/write the raw bytes
         ReflectRawBytes( bytes_of( d ), r );
+    }
+    else #if #run IsPrimitiveArrayType( cast(*Type_Info) T )
+    {
+        // Just read/write the raw bytes of the array elements
+        tia := cast(*Type_Info_Array) T;
+        bytes: []u8 = .{ d.count * tia.element_type.runtime_size, d.data };
+
+        ReflectRawBytes( bytes, r );
+    }
+    else #if #run IsArrayType( cast(*Type_Info) T )
+    {
+        Reflect( *d.count, r );
+
+        // TODO Test this is actually doing what we want for reading AND writing
+        for * d
+            Reflect( it, r );
     }
     else
     {
