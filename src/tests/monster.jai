@@ -26,7 +26,7 @@ Monster :: struct
     friendly: bool = false;     @field(5)
     inventory: [..] u8;         @field(6)
     color: Color = .Blue;       @field(7)
-    //weapons: [..] Weapon;       @6
+    weapons: [..] Weapon;       @field(8)
     //equipped: Equipment;        @id(7) @name(bla)
     //path: [..] Vec3;            @id(8)
 }

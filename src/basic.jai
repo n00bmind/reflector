@@ -86,3 +86,12 @@ Log2 :: inline ( n: s64 ) -> int
 
     return result;
 }
+
+
+///// Misc
+report_warning :: ( loc: Source_Code_Location, fmt: string, args: .. Any )
+{
+    finalFmt := tprint( "[Reflector] %:\n > %", loc, fmt );
+    log( finalFmt, ..args, loc = loc, flags = .WARNING );
+} @PrintLike
+

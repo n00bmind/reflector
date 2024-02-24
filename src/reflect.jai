@@ -152,7 +152,7 @@ GenReflectFunction :: ( T: Type, st: *Type_Info_Struct, reflector: $ReflectorTyp
         append( *globalBuilder, "    return inline ReflectPacked( d, r );\n" );
     else
     {
-        reflectedFieldCount := 0;
+        annotatedFieldCount := 0;
         // Do a first pass parsing notes & their arguments, and populate a (decl-order?) array with all the info
         // TODO Special processing for constants (negative offset_in_bytes), usings, procedures? etc
         // TODO TODO Check discovered layout against a persisted one from last compilation
@@ -172,7 +172,7 @@ GenReflectFunction :: ( T: Type, st: *Type_Info_Struct, reflector: $ReflectorTyp
             fieldFound, fieldArgs := ParseNote( "field", decl.notes );
             if !fieldFound
                 // This guy is not marked for serialization
-            continue;
+                continue;
 
             if !fieldArgs
             {
@@ -212,21 +212,16 @@ GenReflectFunction :: ( T: Type, st: *Type_Info_Struct, reflector: $ReflectorTyp
 
             // TODO Parse optional name attribute etc.
 
-            reflectedFieldCount += 1;
+            annotatedFieldCount += 1;
         }
 
-        // TODO If no member fields have been identified, and this is not a 'packed' struct, default to in-memory-order consecutive automatic ids,
+        // If no member fields have been identified, and this is not a 'packed' struct, default to in-memory-order consecutive automatic ids,
         // so that if the user decides in the future he wants to change the default, old data can still be read
-        if reflectedFieldCount == 0
+        if annotatedFieldCount == 0
         {
-            // TODO This is way too verbose, and also highlights just the very first letter of the struct name.. Not very usable, as it'd be somewhat expected to have more than one of these
-            // Instead just display a summary line per warning for our purposes
-            compiler_report( tprint( "Structured type '%' will be serialised but has no serialisation notes. Will default to memory-order fields.", st.name ),
-                             make_location( rootDecl ), mode = .WARNING );
-
-            //...
-            // TODO 
-            assert( false && "Not implemented" );
+            report_warning( make_location( rootDecl ),
+                            "Structured type '%' will be serialised but has no serialisation notes. Will default to memory-order fields.",
+                            st.name );
         }
 
         //append( *globalBuilder, tprint( "Reflect :: ( d: *%, r: *Reflector ) -> ReflectResult\n", st.name ) );
@@ -237,12 +232,29 @@ GenReflectFunction :: ( T: Type, st: *Type_Info_Struct, reflector: $ReflectorTyp
         append( *globalBuilder, "        defer EndReflectType( *info, r );\n" );
         append( *globalBuilder, "        \n" );
 
+        lastOffset := -1;
         for m, index: st.members
         {
             info := *fieldInfo[index];
+            // If there were no annotations, simply assign a memory-order index as field id
+            if annotatedFieldCount == 0
+            {
+                // Not sure if there's any guarantees about the order of the entries in the members array
+                // so assert that we're always increasing the offset inside the parent struct
+                // TODO Assert macro that prints the expression and an optional msg!
+                assert( m.offset_in_bytes > lastOffset && "We assume in-memory order of members!" );
+                // FIXME This breaks with overlapped fields (unions)
+                lastOffset = m.offset_in_bytes;
 
-            print( "+%. %: % (%)  '%'\n", m.offset_in_bytes, m.name, type_to_string( m.type ), m.type.runtime_size, m.notes );
-            append( *globalBuilder, tprint( "        ReflectField( *d.%, %, \"%\", *info, r );\n", m.name, info.id, m.name ) );
+                assert( info.id == 0 );
+                info.id = cast(u16)(index + 1);
+            }
+
+            if info.id
+            {
+                print( "+%. %: % (%)  '%'\n", m.offset_in_bytes, m.name, type_to_string( m.type ), m.type.runtime_size, m.notes );
+                append( *globalBuilder, tprint( "        ReflectField( *d.%, %, \"%\", *info, r );\n", m.name, info.id, m.name ) );
+            }
         }
 
         append( *globalBuilder, "    }\n" );
@@ -559,7 +571,8 @@ ReflectRawBytes :: inline ( d: [] u8, r: *BinaryReflector )
 
 IsPrimitiveType :: ( ti: *Type_Info ) -> bool
 {
-    return ti.type == .INTEGER || ti.type == .FLOAT || ti.type == .BOOL;
+    // TODO We probably want to be able to do something more sophisticated for enums
+    return ti.type == .INTEGER || ti.type == .FLOAT || ti.type == .BOOL || ti.type == .ENUM;
 }
 
 IsArrayType :: ( ti: *Type_Info ) -> bool
@@ -604,7 +617,7 @@ Reflect :: inline ( d: *$T, r: *BinaryReflector ) -> ReflectResult
         Reflect( *d.count, r );
 
         // TODO Test this is actually doing what we want for reading AND writing
-        for * d
+        for * <<d
             Reflect( it, r );
     }
     else
