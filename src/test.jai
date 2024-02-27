@@ -17,7 +17,7 @@ main :: ()
     result = Reflect( *mB, *reader );
     print( "Reader result: %\n", result );
 
-    equal := Compare( *mA, *mB, size_of(Monster) ) == 0;
+    equal := mA == mB;
     print( "Reflected type is %\n", ifx equal "EQUAL" else "NOT EQUAL" );
 
 

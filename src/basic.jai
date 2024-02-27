@@ -45,7 +45,19 @@ GetMemberValueAs :: ( m: *Type_Info_Struct_Member, d: *$T/interface struct {}, $
 
 
 ///// Arrays
-contains :: ( array: [] $T, value: T ) -> bool
+// TODO Allocators
+New :: ( a: *[] $T, count: s64, $initialized := true )
+{
+    array, _ = NewArray( count, T, initialized );
+    <<a = array;
+}
+
+New :: ( a: *[..] $T, capacity: s64 )
+{
+    array_reserve( a, capacity );
+}
+
+Contains :: ( array: [] $T, value: T ) -> bool
 {
     for array
     {
@@ -89,7 +101,7 @@ Log2 :: inline ( n: s64 ) -> int
 
 
 ///// Misc
-report_warning :: ( loc: Source_Code_Location, fmt: string, args: .. Any )
+ReportWarning :: ( loc: Source_Code_Location, fmt: string, args: .. Any )
 {
     finalFmt := tprint( "[Reflector] %:\n > %", loc, fmt );
     log( finalFmt, ..args, loc = loc, flags = .WARNING );

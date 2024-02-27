@@ -148,6 +148,7 @@ GenReflectFunction :: ( T: Type, st: *Type_Info_Struct, reflector: $ReflectorTyp
         isPacked = packedFound;
     }
 
+    // TODO Unions (seem to be accepted by the struct interface too)
     if isPacked
         append( *globalBuilder, "    return inline ReflectPacked( d, r );\n" );
     else
@@ -206,7 +207,7 @@ GenReflectFunction :: ( T: Type, st: *Type_Info_Struct, reflector: $ReflectorTyp
             if m.type.type == .STRUCT
             {
                 fieldStructType  := cast(*Type_Info_Struct) m.type;
-                if contains( fieldStructType.notes, "packed" )
+                if Contains( fieldStructType.notes, "packed" )
                     info.flags |= .Packed;
             }
 
@@ -219,7 +220,7 @@ GenReflectFunction :: ( T: Type, st: *Type_Info_Struct, reflector: $ReflectorTyp
         // so that if the user decides in the future he wants to change the default, old data can still be read
         if annotatedFieldCount == 0
         {
-            report_warning( make_location( rootDecl ),
+            ReportWarning( make_location( rootDecl ),
                             "Structured type '%' will be serialised but has no serialisation notes. Will default to memory-order fields.",
                             st.name );
         }
@@ -604,17 +605,48 @@ Reflect :: inline ( d: *$T, r: *BinaryReflector ) -> ReflectResult
         // Just read/write the raw bytes
         ReflectRawBytes( bytes_of( d ), r );
     }
+    else #if #run (cast(*Type_Info)T).type == .STRING
+    {
+        Reflect( *d.count, r );
+
+        #if r.IsReading
+        {
+            // TODO We probably want to be much more explicit with our allocators..
+            <<d = alloc_string( d.count );
+        }
+
+        ReflectRawBytes( cast([]u8)<<d, r );
+    }
+
+
+    // FIXME Carefully consider the all 3 array cases here!
     else #if #run IsPrimitiveArrayType( cast(*Type_Info) T )
     {
-        // Just read/write the raw bytes of the array elements
+        count := d.count;
+        Reflect( *count, r );
+
+        #if r.IsReading
+        {
+            // TODO We probably want to be much more explicit with our allocators..
+            Reset( d, count, false );
+        }
+
         tia := cast(*Type_Info_Array) T;
         bytes: []u8 = .{ d.count * tia.element_type.runtime_size, d.data };
 
+        // Just read/write the raw bytes of the array elements
         ReflectRawBytes( bytes, r );
     }
     else #if #run IsArrayType( cast(*Type_Info) T )
     {
-        Reflect( *d.count, r );
+        count := d.count;
+        Reflect( *count, r );
+
+        #if r.IsReading
+        {
+            // TODO We probably want to be much more explicit with our allocators..
+            Reset( d, count, false );
+        }
 
         // TODO Test this is actually doing what we want for reading AND writing
         for * <<d
