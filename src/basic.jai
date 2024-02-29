@@ -46,15 +46,27 @@ GetMemberValueAs :: ( m: *Type_Info_Struct_Member, d: *$T/interface struct {}, $
 
 ///// Arrays
 // TODO Allocators
-New :: ( a: *[] $T, count: s64, $initialized := true )
+Init :: ( a: *[] $T, count: s64, $initialized := true )
 {
     array, _ = NewArray( count, T, initialized );
     <<a = array;
 }
 
-New :: ( a: *[..] $T, capacity: s64 )
+Init :: ( a: *[..] $T, capacity: s64 )
 {
     array_reserve( a, capacity );
+}
+
+Reset :: ( a: *[] $T, count: s64, $initialized := true )
+{
+    // NOTE I dont see this doing any copies, so presumably it's assumed that realloc does that if required?
+    array_resize( a, count, initialized );
+}
+
+Reset :: ( a: *[..] $T, count: s64, $initialized := true )
+{
+    // NOTE I dont see this doing any copies, so presumably it's assumed that realloc does that if required?
+    array_resize( a, count, initialized );
 }
 
 Contains :: ( array: [] $T, value: T ) -> bool

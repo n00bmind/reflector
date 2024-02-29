@@ -570,15 +570,31 @@ ReflectRawBytes :: inline ( d: [] u8, r: *BinaryReflector )
     }
 }
 
-IsPrimitiveType :: ( ti: *Type_Info ) -> bool
+IsPrimitiveType :: inline ( ti: *Type_Info ) -> bool
 {
     // TODO We probably want to be able to do something more sophisticated for enums
     return ti.type == .INTEGER || ti.type == .FLOAT || ti.type == .BOOL || ti.type == .ENUM;
 }
-
-IsArrayType :: ( ti: *Type_Info ) -> bool
+IsPrimitiveType :: inline ( $T: Type ) -> bool
 {
+    return IsPrimitiveType( cast(*Type_Info) T );
+}
+
+// TODO We should be able to make these 'constexpr/eval' functions, but how does one do that in Jai?
+// May be a good Q for the next Q&A
+IsArrayType :: inline ( $T: Type ) -> bool
+{
+    ti := cast(*Type_Info) T;
     return ti.type == .ARRAY || ti.type == .STRING;
+}
+
+IsFixedArrayType :: inline ( $T: Type ) -> bool
+{
+    ti := cast(*Type_Info) T;
+    if ti.type != .ARRAY
+        return false;
+    tia := cast(*Type_Info_Array) T;
+    return tia.array_type == .FIXED;
 }
 
 IsPrimitiveArrayType :: ( ti: *Type_Info ) -> bool
@@ -600,12 +616,12 @@ Reflect :: inline ( d: *$T, r: *BinaryReflector ) -> ReflectResult
     return ti.type != .STRUCT;
 }
 {
-    #if #run IsPrimitiveType( cast(*Type_Info) T )
+    #if #run IsPrimitiveType( T )
     {
         // Just read/write the raw bytes
         ReflectRawBytes( bytes_of( d ), r );
     }
-    else #if #run (cast(*Type_Info)T).type == .STRING
+    else #if T == string
     {
         Reflect( *d.count, r );
 
@@ -617,40 +633,41 @@ Reflect :: inline ( d: *$T, r: *BinaryReflector ) -> ReflectResult
 
         ReflectRawBytes( cast([]u8)<<d, r );
     }
-
-
-    // FIXME Carefully consider the all 3 array cases here!
-    else #if #run IsPrimitiveArrayType( cast(*Type_Info) T )
+    else #if #run IsArrayType( T )
     {
         count := d.count;
         Reflect( *count, r );
 
         #if r.IsReading
         {
-            // TODO We probably want to be much more explicit with our allocators..
-            Reset( d, count, false );
+            #if #run IsFixedArrayType( T )
+            {
+                tia := cast(*Type_Info_Array) T;
+                // TODO Do we want to be more fault tolerant here?
+                if count != tia.array_count
+                    return .BadData;
+            }
+            else
+            {
+                // TODO We probably want to be much more explicit with our allocators..
+                Reset( d, count, false );
+            }
         }
 
-        tia := cast(*Type_Info_Array) T;
-        bytes: []u8 = .{ d.count * tia.element_type.runtime_size, d.data };
-
-        // Just read/write the raw bytes of the array elements
-        ReflectRawBytes( bytes, r );
-    }
-    else #if #run IsArrayType( cast(*Type_Info) T )
-    {
-        count := d.count;
-        Reflect( *count, r );
-
-        #if r.IsReading
+        #if #run IsPrimitiveArrayType( cast(*Type_Info) T )
         {
-            // TODO We probably want to be much more explicit with our allocators..
-            Reset( d, count, false );
-        }
+            tia := cast(*Type_Info_Array) T;
+            bytes: []u8 = .{ d.count * tia.element_type.runtime_size, d.data };
 
-        // TODO Test this is actually doing what we want for reading AND writing
-        for * <<d
-            Reflect( it, r );
+            // Just read/write the raw bytes of the array elements
+            ReflectRawBytes( bytes, r );
+        }
+        else
+        {
+            // TODO Test this is actually doing what we want for reading AND writing
+            for * <<d
+                Reflect( it, r );
+        }
     }
     else
     {

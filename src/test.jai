@@ -6,6 +6,10 @@
 main :: ()
 {
     mA, mB: Monster;
+    array_add( *mA.inventory, 10 );
+    array_add( *mA.inventory, 20 );
+    array_add( *mA.inventory, 30 );
+    array_add( *mA.weapons, .{ "Hammer", 42 } );
 
     writer: BinaryWriter;
     result := Reflect( *mA, *writer );
