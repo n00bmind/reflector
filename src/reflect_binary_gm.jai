@@ -7,12 +7,8 @@
 
 BinaryReflectorGM :: struct( $IsReading2: bool )
 {
-    #as using reflector: Reflector( IsReading2, true );
+    #as using reflector: Reflector( BinaryTypeInfo, IsReading2, true );
 
-    // TODO How do we pre-reserve a decent initial size for this without requiring an Init() function
-    // TODO It seems that by merely manually stacking these into an array as opposed to having them declared in the scope
-    // immediately preceding the BeginReflectType call, we lose a fair amount of speed! However, I dont see a nice alternative
-    typeInfoStack: [..] ReflectedTypeInfo;
     scopeDepth: s64;
 }
 
@@ -62,7 +58,7 @@ ReadAndAdvance :: inline ( using r: *BinaryReaderGM, d: [] u8 )
 }
 
 
-ReflectedTypeInfo :: struct
+BinaryTypeInfo :: struct
 {
     type:                    Type;
     startOffset:             s64;
@@ -77,13 +73,10 @@ ReflectedTypeInfo :: struct
     TotalSizeMax :: (1 << TotalSizeBits) - 1;
 }
 
-
 #scope_export
 
-BeginReflectType :: ( type: Type, r: *BinaryReflectorGM ) -> bool
+BeginReflectType :: ( info: *BinaryTypeInfo, type: Type, r: *BinaryReflectorGM ) -> bool
 {
-    info: *ReflectedTypeInfo = Push( *r.typeInfoStack );
-
     #if r.IsReading
     {
         info.startOffset = r.bufferHead;
@@ -118,12 +111,9 @@ BeginReflectType :: ( type: Type, r: *BinaryReflectorGM ) -> bool
     return true;
 }
 
-EndReflectType :: ( r: *BinaryReflectorGM )
+EndReflectType :: ( info: *BinaryTypeInfo, r: *BinaryReflectorGM )
 {
     r.scopeDepth -= 1;
-
-    info: ReflectedTypeInfo;
-    Pop( *r.typeInfoStack, *info );
 
     #if r.IsReading
     {
@@ -147,10 +137,8 @@ EndReflectType :: ( r: *BinaryReflectorGM )
 
 BinaryFieldSize :: size_of(u64);
 
-BeginReflectField :: ( fieldId: u16, name: string, r: *BinaryReflectorGM ) -> bool
+BeginReflectField :: ( fieldId: u16, name: string, info: *BinaryTypeInfo, r: *BinaryReflectorGM ) -> bool
 {
-    info: *ReflectedTypeInfo = Last( r.typeInfoStack );
-
     #if r.IsReading
     {
         // If we're past the current bounds for the type, this field is missing (not an error)
@@ -225,10 +213,8 @@ BeginReflectField :: ( fieldId: u16, name: string, r: *BinaryReflectorGM ) -> bo
     return true;
 }
 
-EndReflectField :: ( fieldId: u16, r: *BinaryReflectorGM )
+EndReflectField :: ( fieldId: u16, info: *BinaryTypeInfo, r: *BinaryReflectorGM )
 {
-    info: *ReflectedTypeInfo = Last( r.typeInfoStack );
-
     #if r.IsReading
     {
         // Set the read head to ensure it's correct

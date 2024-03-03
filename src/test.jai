@@ -109,7 +109,6 @@ TestBinaryReader :: ()
     while BeginTestCycle( *tester )
     {
         reader2: BinaryReaderGM = .{ buffer = array };
-        array_reserve( *reader2.typeInfoStack, 1024 );
 
         BeginTime( *tester );
         Reflect( *readChunk, *reader2 );

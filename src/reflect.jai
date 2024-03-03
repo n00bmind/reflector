@@ -8,7 +8,7 @@
 
 
 // TODO Turn polymorph args into ReflectorFlags, most likely
-Reflector :: struct ($IsReading: bool, $SupportsPackedTypes: bool = false)
+Reflector :: struct (ReflectedTypeInfo: $T, $IsReading: bool, $SupportsPackedTypes: bool = false)
 {
     IsWriting :: !IsReading;
 
@@ -143,7 +143,7 @@ GenReflectFunction :: ( T: Type, st: *Type_Info_Struct, reflector: $ReflectorTyp
 
     // First of all, check if this type was marked as 'packed'
     isPacked := false;
-    if reflector.SupportsPackedTypes
+    #if reflector.SupportsPackedTypes
     {
         packedFound, packedArgs := ParseNote( "packed", rootDecl.notes );
         isPacked = packedFound;
@@ -226,9 +226,10 @@ GenReflectFunction :: ( T: Type, st: *Type_Info_Struct, reflector: $ReflectorTyp
                             st.name );
         }
 
-        append( *globalBuilder, tprint( "    if BeginReflectType( %, r )\n", st.name ) );
+        append( *globalBuilder, "    info: r.ReflectedTypeInfo;\n" );
+        append( *globalBuilder, tprint( "    if BeginReflectType( *info, %, r )\n", st.name ) );
         append( *globalBuilder, "    {\n" );
-        append( *globalBuilder, "        defer EndReflectType( r );\n" );
+        append( *globalBuilder, "        defer EndReflectType( *info, r );\n" );
         append( *globalBuilder, "        \n" );
 
         lastOffset := -1;
@@ -251,7 +252,7 @@ GenReflectFunction :: ( T: Type, st: *Type_Info_Struct, reflector: $ReflectorTyp
 
             if info.id
             {
-                append( *globalBuilder, tprint( "        ReflectField( *d.%, %, \"%\", r );\n", m.name, info.id, m.name ) );
+                append( *globalBuilder, tprint( "        ReflectField( *d.%, %, \"%\", *info, r );\n", m.name, info.id, m.name ) );
             }
         }
 
@@ -284,16 +285,18 @@ Reflect :: ( d: *$T/interface struct {}, r: *Reflector ) -> ReflectResult
 
 // TODO When benchmarking, test making a custom overload for BinaryReflectors that tries to streamline this as much as possible
 // NOTE Apparently there's a limit to macro recursion .. https://github.com/Jai-Community/Jai-Community-Library/wiki/Getting-Started#nested-macros
-ReflectField :: ( field: Code, fieldId: u16, name: string, r: *Reflector ) #expand
+// As demonstrated, we can refer to the constants block of the type of a declared argument to declare a separate argument, like with
+// ReflectedTypeInfo here, which is freaking awesome!
+ReflectField :: ( field: Code, fieldId: u16, name: string, info: *r.ReflectedTypeInfo, r: *Reflector ) #expand
 {
     result: ReflectResult = .Ok;
 
     //fieldOffset := ReflectFieldOffset( r );      
-    if BeginReflectField( fieldId, name, r )  // attribs ) )
+    if BeginReflectField( fieldId, name, info, r )  // attribs ) )
     {                                                     
         result = Reflect( #insert field, r );                        
 
-        EndReflectField( fieldId, r );  // fieldOffset
+        EndReflectField( fieldId, info, r );  // fieldOffset
     }
 
     if result != .Ok
