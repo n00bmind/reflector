@@ -79,6 +79,22 @@ Contains :: ( array: [] $T, value: T ) -> bool
     return false;
 }
 
+Last :: ( array: [..] $T ) -> *T
+{
+    return ifx array.count > 0 then *array[array.count - 1] else null;
+}
+
+Push :: ( array: *[..] $T ) -> *T
+{
+    return array_add( array );
+}
+
+Pop :: ( array: *[..] $T, out: *T )
+{
+    <<out = (<<array)[array.count - 1];
+    array.count -= 1;
+}
+
 ///// Math
 
 IsPowerOf2 :: inline ( value: $T ) -> bool

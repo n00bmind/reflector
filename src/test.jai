@@ -4,7 +4,7 @@
 // TODO Make building tests a separate build command that fetches dependencies etc.
 #import "bricks";
 
-#load "reflect.jai";
+#load "reflect_binary_gm.jai";
 #load "tests/monster.jai";
 
 main :: ()
@@ -15,12 +15,12 @@ main :: ()
     array_add( *mA.inventory, 30 );
     array_add( *mA.weapons, .{ "Hammer", 42 } );
 
-    writer: BinaryWriter;
+    writer: BinaryWriterGM;
     result := Reflect( *mA, *writer );
     print( "Writer result: %\n", result );
     print( "Wrote % bytes\n", writer.buffer.size );
 
-    reader: BinaryReader = .{ buffer = ToArray( *writer.buffer ) };
+    reader: BinaryReaderGM = .{ buffer = ToArray( *writer.buffer ) };
     print( "Reading % bytes\n", reader.buffer.count );
     result = Reflect( *mB, *reader );
     print( "Reader result: %\n", result );
@@ -90,13 +90,13 @@ TestBinaryReader :: ()
     for 0..8000
         array_add( *writtenChunk.deeper, deeper );
 
-    writer: BinaryWriter;
+    writer: BinaryWriterGM;
     result := Reflect( *writtenChunk, *writer );
     print( "Writer result: %\n", result );
     print( "Wrote % bytes\n", writer.buffer.size );
 
     readChunk: ChunkyType;
-    reader: BinaryReader = .{ buffer = ToArray( *writer.buffer ) };
+    reader: BinaryReaderGM = .{ buffer = ToArray( *writer.buffer ) };
     print( "Reading % bytes\n", reader.buffer.count );
     result = Reflect( *readChunk, *reader );
     print( "Reader result: %\n", result );
@@ -108,7 +108,8 @@ TestBinaryReader :: ()
     array := ToArray( *writer.buffer );
     while BeginTestCycle( *tester )
     {
-        reader2: BinaryReader = .{ buffer = array };
+        reader2: BinaryReaderGM = .{ buffer = array };
+        array_reserve( *reader2.typeInfoStack, 1024 );
 
         BeginTime( *tester );
         Reflect( *readChunk, *reader2 );
