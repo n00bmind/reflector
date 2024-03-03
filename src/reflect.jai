@@ -253,7 +253,6 @@ GenReflectFunction :: ( T: Type, st: *Type_Info_Struct, reflector: $ReflectorTyp
 
             if info.id
             {
-                print( "+%. %: % (%)  '%'\n", m.offset_in_bytes, m.name, type_to_string( m.type ), m.type.runtime_size, m.notes );
                 append( *globalBuilder, tprint( "        ReflectField( *d.%, %, \"%\", *info, r );\n", m.name, info.id, m.name ) );
             }
         }
@@ -597,8 +596,10 @@ IsFixedArrayType :: inline ( $T: Type ) -> bool
     return tia.array_type == .FIXED;
 }
 
-IsPrimitiveArrayType :: ( ti: *Type_Info ) -> bool
+IsPrimitiveArrayType :: inline ( $T : Type ) -> bool
 {
+    ti := cast(*Type_Info) T;
+
     if ti.type == .STRING
         return true;
 
@@ -654,10 +655,10 @@ Reflect :: inline ( d: *$T, r: *BinaryReflector ) -> ReflectResult
             }
         }
 
-        #if #run IsPrimitiveArrayType( cast(*Type_Info) T )
+        #if #run IsPrimitiveArrayType( T )
         {
             tia := cast(*Type_Info_Array) T;
-            bytes: []u8 = .{ d.count * tia.element_type.runtime_size, d.data };
+            bytes: []u8 = .{ d.count * tia.element_type.runtime_size, xx d.data };
 
             // Just read/write the raw bytes of the array elements
             ReflectRawBytes( bytes, r );

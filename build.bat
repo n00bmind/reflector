@@ -1,2 +1,2 @@
 @echo off
-jai build.jai 
+jai build.jai %*

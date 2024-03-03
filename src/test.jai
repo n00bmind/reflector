@@ -1,7 +1,10 @@
 #import "Basic";
+#import "Windows";
 
 #load "reflect.jai";
 #load "tests/monster.jai";
+
+#load "benchmark.jai";
 
 main :: ()
 {
@@ -27,10 +30,7 @@ main :: ()
 
 
     print( "\n\n___________\n" );
-    pos: Vec3;
-    print( "Reflect() for type % is: %\n", type_of(pos),
-           type_to_string( type_info(type_of( #procedure_of_call Reflect( *pos, *writer ) )) ) );
-    // FIXME compiler_get_nodes() if the type is not visible from reflect.jai (or something!?)
+    // FIXME compiler_get_nodes() errors if the type is not visible from reflect.jai
     //Vecf :: struct
     //{
         //x, y, z: float;
@@ -39,5 +39,77 @@ main :: ()
     //print( "Reflect() for type % is: %\n", type_of(posf),
            //type_to_string( type_info(type_of( #procedure_of_call Reflect( *posf, *writer ) )) ) );
 
+    TestBinaryReader();
 }
 
+// FIXME compiler_get_nodes() errors if the type is not visible from reflect.jai
+#scope_export
+
+SimpleType :: struct
+{
+    num: s32;
+}
+
+ComplexType :: struct
+{
+    simple: SimpleType;
+    nums: [] s32;
+    str: string;
+}
+
+DeepType :: struct
+{
+    complex: ComplexType;
+    n: s32;
+}
+
+DeeperType :: struct
+{
+    deep: DeepType;
+    someText: string;
+}
+
+ChunkyType :: struct
+{
+    deeper: [..] DeeperType;
+}
+
+TestBinaryReader :: ()
+{
+    deeper: DeeperType =
+    .{
+        .{
+            .{ .{ 42 }, .[ 1, 2, 3 ], "Hello Sailor" },
+            666,
+        },
+        "Apartense vacas, que la vida es corta",
+    };
+
+    writtenChunk: ChunkyType;
+    for 0..8000
+        array_add( *writtenChunk.deeper, deeper );
+
+    writer: BinaryWriter;
+    result := Reflect( *writtenChunk, *writer );
+    print( "Writer result: %\n", result );
+    print( "Wrote % bytes\n", writer.buffer.size );
+
+    readChunk: ChunkyType;
+    reader: BinaryReader = .{ buffer = ToArray( *writer.buffer ) };
+    print( "Reading % bytes\n", reader.buffer.count );
+    result = Reflect( *readChunk, *reader );
+    print( "Reader result: %\n", result );
+
+
+    tester: RepetitionTester;
+    NewTestWave( *tester );
+
+    array := ToArray( *writer.buffer );
+    while BeginTestCycle( *tester )
+    {
+        BeginTime( *tester );
+        reader2: BinaryReader = .{ buffer = array };
+        Reflect( *readChunk, *reader2 );
+        EndTime( *tester );
+    }
+}
