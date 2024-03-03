@@ -1,10 +1,11 @@
 #import "Basic";
 #import "Windows";
 
+// TODO Make building tests a separate build command that fetches dependencies etc.
+#import "bricks";
+
 #load "reflect.jai";
 #load "tests/monster.jai";
-
-#load "benchmark.jai";
 
 main :: ()
 {
@@ -102,14 +103,16 @@ TestBinaryReader :: ()
 
 
     tester: RepetitionTester;
-    NewTestWave( *tester );
+    NewTestWave( *tester, reader.buffer.count );
 
     array := ToArray( *writer.buffer );
     while BeginTestCycle( *tester )
     {
-        BeginTime( *tester );
         reader2: BinaryReader = .{ buffer = array };
+
+        BeginTime( *tester );
         Reflect( *readChunk, *reader2 );
         EndTime( *tester );
+        CountBytes( *tester, reader2.buffer.count );
     }
 }
