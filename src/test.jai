@@ -5,29 +5,12 @@
 #import "bricks";
 
 #load "reflect_binary_gm.jai";
+#load "reflect_binary_fb.jai";
 #load "tests/monster.jai";
 
 main :: ()
 {
-    mA, mB: Monster;
-    array_add( *mA.inventory, 10 );
-    array_add( *mA.inventory, 20 );
-    array_add( *mA.inventory, 30 );
-    array_add( *mA.weapons, .{ "Hammer", 42 } );
-
-    writer: BinaryWriterGM;
-    result := Reflect( *mA, *writer );
-    print( "Writer result: %\n", result );
-    print( "Wrote % bytes\n", writer.buffer.size );
-
-    reader: BinaryReaderGM = .{ buffer = ToArray( *writer.buffer ) };
-    print( "Reading % bytes\n", reader.buffer.count );
-    result = Reflect( *mB, *reader );
-    print( "Reader result: %\n", result );
-
-    equal := mA == mB;
-    print( "Reflected type is %\n", ifx equal "EQUAL" else "NOT EQUAL" );
-
+    TestBinaryReader();
 
 
     print( "\n\n___________\n" );
@@ -40,7 +23,7 @@ main :: ()
     //print( "Reflect() for type % is: %\n", type_of(posf),
            //type_to_string( type_info(type_of( #procedure_of_call Reflect( *posf, *writer ) )) ) );
 
-    TestBinaryReader();
+    BenchBinaryReader();
 }
 
 // FIXME compiler_get_nodes() errors if the type is not visible from reflect.jai
@@ -77,6 +60,28 @@ ChunkyType :: struct
 
 TestBinaryReader :: ()
 {
+    mA, mB: Monster;
+    array_add( *mA.inventory, 10 );
+    array_add( *mA.inventory, 20 );
+    array_add( *mA.inventory, 30 );
+    array_add( *mA.weapons, .{ "Hammer", 42 } );
+
+    writer: BinaryWriterGM;
+    result := Reflect( *mA, *writer );
+    print( "Writer result: %\n", result );
+    print( "Wrote % bytes\n", writer.buffer.size );
+
+    reader: BinaryReaderGM = .{ buffer = ToArray( *writer.buffer ) };
+    print( "Reading % bytes\n", reader.buffer.count );
+    result = Reflect( *mB, *reader );
+    print( "Reader result: %\n", result );
+
+    equal := mA == mB;
+    print( "Reflected type is %\n", ifx equal "EQUAL" else "NOT EQUAL" );
+}
+
+BenchBinaryReader :: ()
+{
     deeper: DeeperType =
     .{
         .{
@@ -86,6 +91,10 @@ TestBinaryReader :: ()
         "Apartense vacas, que la vida es corta",
     };
 
+    // TODO Figure out how to get the size of L3 in the machine, and create a test that reads several times that amount
+    // to ensure we're always benchmarking against the main memory bandwidth
+    // TODO Write a test that finds the ballpark memory bandwidth in the machine as a baseline for comparison
+    // https://www.computerenhance.com/p/cache-size-and-bandwidth-testing?r=1nj2pu&utm_campaign=post&utm_medium=web
     writtenChunk: ChunkyType;
     for 0..8000
         array_add( *writtenChunk.deeper, deeper );

@@ -125,3 +125,21 @@ operator == :: ( a: Weapon, b: Weapon ) -> bool
 {
     return a.name == b.name && a.damage == b.damage;
 }
+
+
+
+//// Eclectic (https://github.com/dvidelabs/flatcc/blob/master/doc/eclectic.fbs)
+
+Fruit :: enum u8
+{
+    Banana :: 255;
+    Orange :: 42;
+}
+
+FooBar :: struct
+{
+    meal: Fruit = .Banana;
+    //density: s64;         // Deprecated
+    say: string;
+    height: s16;
+}
