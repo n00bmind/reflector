@@ -252,7 +252,8 @@ GenReflectFunction :: ( T: Type, st: *Type_Info_Struct, reflector: $ReflectorTyp
 
             if info.id
             {
-                append( *globalBuilder, tprint( "        ReflectField( *d.%, %, \"%\", *info, r );\n", m.name, info.id, m.name ) );
+                append( *globalBuilder, tprint( "        ReflectField( *d.%, %, \"%\", %, *info, r );\n",
+                                                m.name, info.id, m.name, m.offset_in_bytes ) );
             }
         }
 
@@ -287,12 +288,12 @@ Reflect :: ( d: *$T/interface struct {}, r: *Reflector ) -> ReflectResult
 // NOTE Apparently there's a limit to macro recursion .. https://github.com/Jai-Community/Jai-Community-Library/wiki/Getting-Started#nested-macros
 // As demonstrated, we can refer to the constants block of the type of a declared argument to declare a separate argument, like with
 // ReflectedTypeInfo here, which is freaking awesome!
-ReflectField :: ( field: Code, fieldId: u16, name: string, info: *r.ReflectedTypeInfo, r: *Reflector ) #expand
+ReflectField :: ( field: Code, fieldId: u16, name: string, offsetBytes: s64, info: *r.ReflectedTypeInfo, r: *Reflector ) #expand
 {
     result: ReflectResult = .Ok;
 
     //fieldOffset := ReflectFieldOffset( r );      
-    if BeginReflectField( fieldId, name, info, r )  // attribs ) )
+    if BeginReflectField( fieldId, name, offsetBytes, info, r )  // attribs ) )
     {                                                     
         result = Reflect( #insert field, r );                        
 

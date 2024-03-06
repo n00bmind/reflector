@@ -137,7 +137,7 @@ EndReflectType :: ( info: *BinaryTypeInfo, r: *BinaryReflectorGM )
 
 BinaryFieldSize :: size_of(u64);
 
-BeginReflectField :: ( fieldId: u16, name: string, info: *BinaryTypeInfo, r: *BinaryReflectorGM ) -> bool
+BeginReflectField :: ( fieldId: u16, name: string, offsetFromParent: s64, info: *BinaryTypeInfo, r: *BinaryReflectorGM ) -> bool
 {
     #if r.IsReading
     {

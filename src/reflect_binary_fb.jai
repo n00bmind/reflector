@@ -92,7 +92,7 @@ GetField :: ( fieldId: int, vt: *VTable ) -> bool, voffset
 
 BinaryReflectorFB :: struct( $IsReading2: bool )
 {
-    #as using reflector: Reflector( FBTableInfo, IsReading2, true );
+    #as using reflector: Reflector( FBTypeInfo, IsReading2, true );
 }
 
 BinaryReaderFB :: struct
@@ -108,6 +108,7 @@ BinaryWriterFB :: struct
     #as using binary: BinaryReflectorFB( false );
 
     buffer: BufferBuilder( 1 * Megabytes );
+    tables: [..] FBTableInfo;
 }
 
 
@@ -115,29 +116,74 @@ BinaryWriterFB :: struct
 
 FBTableInfo :: struct
 {
+    // This is what gets dumped to the vtable: a list of offsets to the source table, sorted by field id, starting at 0
+    fieldOffsets: [..] voffset;
+}
 
+FBTypeInfo :: struct
+{
+    // (write-only?) Entry in the list of tables
+    tableEntryIndex: int;
 }
 
 
 #scope_export
 
-BeginReflectType :: ( info: *FBTableInfo, type: Type, r: *BinaryReflectorFB ) -> bool
+BeginReflectType :: ( info: *FBTypeInfo, type: Type, r: *BinaryReflectorFB ) -> bool
+{
+    #if r.IsWriting
+    {
+        // TODO Introspect type to find out the total size the table for this type is going to need
+        // Then push that whole amount to the buffer straight away to create the "high watermark" where a nested type would have to jump to
+        tableSize := ComputeTableSize( type );
+        
+        // Get a slot in the global list of tables so that all parents appear in that list before their children
+        tableInfo: *FBTableInfo = Push( r.tables );
+        info.tableEntryIndex = tableInfo - r.tables.data;
+
+        array_reserve( *tableInfo.fieldOffsets, 8 );
+    }
+    return true;
+}
+
+BeginReflectField :: ( fieldId: u16, name: string, offsetFromParent: s64, info: *FBTypeInfo, r: *BinaryReflectorFB ) -> bool
+{
+    #if r.IsWriting
+    {
+        tableInfo: *FBTableInfo = *r.tables[ info.tableEntryIndex ];
+
+        // Our field ids start at 1 (TODO do we actually need that), but FB starts at 0
+        EnsureSize( *tableInfo.fieldOffsets, fieldId );
+        tableInfo.fieldOffsets[ fieldId - 1 ] = offsetFromParent;
+    }
+    return true;
+}
+
+EndReflectField :: ( fieldId: u16, info: *FBTypeInfo, r: *BinaryReflectorFB )
 {
 
 }
 
-BeginReflectField :: ( fieldId: u16, name: string, info: *FBTableInfo, r: *BinaryReflectorFB ) -> bool
+EndReflectType :: ( info: *FBTypeInfo, r: *BinaryReflectorFB )
 {
 
 }
 
-EndReflectField :: ( fieldId: u16, info: *FBTableInfo, r: *BinaryReflectorFB )
+
+Reflect :: inline ( d: *$T, r: *BinaryReflectorFB ) -> ReflectResult
+#modify
+{
+    ti := cast(*Type_Info) T;
+    return ti.type != .STRUCT;
+}
 {
 
+    return .Ok;
 }
 
-EndReflectType :: ( info: *FBTableInfo, r: *BinaryReflectorFB )
+ReflectPacked :: inline ( d: *$T/interface struct {}, r: *BinaryReflectorFB ) -> ReflectResult
 {
-
+    //ReflectRawBytes( bytes_of( d ), r );
+    return .Ok;
 }
 

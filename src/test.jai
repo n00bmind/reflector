@@ -10,7 +10,8 @@
 
 main :: ()
 {
-    TestBinaryReader();
+    TestBinarySerializerGM();
+    TestBinarySerializerFB();
 
 
     print( "\n\n___________\n" );
@@ -58,7 +59,7 @@ ChunkyType :: struct
     deeper: [..] DeeperType;
 }
 
-TestBinaryReader :: ()
+TestBinarySerializerGM :: ()
 {
     mA, mB: Monster;
     array_add( *mA.inventory, 10 );
@@ -72,6 +73,28 @@ TestBinaryReader :: ()
     print( "Wrote % bytes\n", writer.buffer.size );
 
     reader: BinaryReaderGM = .{ buffer = ToArray( *writer.buffer ) };
+    print( "Reading % bytes\n", reader.buffer.count );
+    result = Reflect( *mB, *reader );
+    print( "Reader result: %\n", result );
+
+    equal := mA == mB;
+    print( "Reflected type is %\n", ifx equal "EQUAL" else "NOT EQUAL" );
+}
+
+TestBinarySerializerFB :: ()
+{
+    mA, mB: Monster;
+    array_add( *mA.inventory, 10 );
+    array_add( *mA.inventory, 20 );
+    array_add( *mA.inventory, 30 );
+    array_add( *mA.weapons, .{ "Hammer", 42 } );
+
+    writer: BinaryWriterFB;
+    result := Reflect( *mA, *writer );
+    print( "Writer result: %\n", result );
+    print( "Wrote % bytes\n", writer.buffer.size );
+
+    reader: BinaryReaderFB = .{ buffer = ToArray( *writer.buffer ) };
     print( "Reading % bytes\n", reader.buffer.count );
     result = Reflect( *mB, *reader );
     print( "Reader result: %\n", result );
