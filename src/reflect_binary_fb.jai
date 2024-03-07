@@ -126,6 +126,47 @@ FBTypeInfo :: struct
     tableEntryIndex: int;
 }
 
+// FIXME Incorporate alignment rules!
+ComputeTableSize :: ( type: Type ) -> s64
+{
+    ti := cast(*Type_Info) type;
+    assert( ti.type == .STRUCT, "We only care about structs here!" );
+    tis := cast(*Type_Info_Struct) type;
+
+    // At a minimum, 1 soffset pointing to the vtable
+    totalSize := size_of(soffset);
+    for m: tis.members
+    {
+        // NOTE TODO The computed sizes here heavily depend on what's implemented or not
+        // at the generic reflector level! So check GenReflectFunction often to ensure its in sync
+        if m.type.type ==
+        {
+            case .INTEGER; #through;
+            case .FLOAT; #through;
+            case .BOOL; #through;
+            case .ENUM;
+                totalSize += m.type.runtime_size;
+            case .STRUCT;
+            case .ARRAY;
+            case .STRING;
+                totalSize += size_of(uoffset);
+            case;
+                assert( false, "Unsupported member type: %\n", m.type.type );
+            // TODO 
+            //case .ANY;
+            //case .POINTER;
+
+            //case .OVERLOAD_SET;
+            //case .POLYMORPHIC_VARIABLE;
+            //case .TYPE;
+            //case .CODE;
+            //case .VARIANT;
+            //case .PROCEDURE;
+            //case .VOID;
+        }
+    }
+    return totalSize;
+}
 
 #scope_export
 
@@ -133,9 +174,10 @@ BeginReflectType :: ( info: *FBTypeInfo, type: Type, r: *BinaryReflectorFB ) -> 
 {
     #if r.IsWriting
     {
-        // TODO Introspect type to find out the total size the table for this type is going to need
-        // Then push that whole amount to the buffer straight away to create the "high watermark" where a nested type would have to jump to
+        // Introspect type to find out the size of the table for this type
         tableSize := ComputeTableSize( type );
+
+        // TODO Then push that whole amount to the buffer straight away to create the "high watermark" where a nested type would have to jump to
         
         // Get a slot in the global list of tables so that all parents appear in that list before their children
         tableInfo: *FBTableInfo = Push( r.tables );
