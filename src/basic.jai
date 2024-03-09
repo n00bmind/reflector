@@ -131,7 +131,13 @@ Log2 :: inline ( n: s64 ) -> int
 ///// Misc
 ReportWarning :: ( loc: Source_Code_Location, fmt: string, args: .. Any )
 {
-    finalFmt := tprint( "[Reflector] %:\n > %", loc, fmt );
+    finalFmt := tprint( "[Reflector] Warning: %:\n > %", loc, fmt );
     log( finalFmt, ..args, loc = loc, flags = .WARNING );
 } @PrintLike
 
+// TODO How do we stop compilation when using this though?
+ReportError :: ( loc: Source_Code_Location, fmt: string, args: .. Any )
+{
+    finalFmt := tprint( "[Reflector] ERROR: %:\n > %", loc, fmt );
+    log( finalFmt, ..args, loc = loc, flags = .ERROR );
+} @PrintLike

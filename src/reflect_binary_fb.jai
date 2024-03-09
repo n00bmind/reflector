@@ -62,7 +62,9 @@ VTable :: struct
 {
     size: u16;
     tableSize: u16;
-    fields: [0] voffset;    // Any number of fields starting at this offset, 2 bytes per entry, according to 'size'
+    // A list of offsets to the source table, sorted by field id, starting at 0
+    // Any number of fields starting at this offset, 2 bytes per entry, according to 'size'
+    fields: [0] voffset;
 }
 
 GetField :: ( fieldId: int, vt: *VTable ) -> bool, voffset
@@ -108,22 +110,16 @@ BinaryWriterFB :: struct
     #as using binary: BinaryReflectorFB( false );
 
     buffer: BufferBuilder( 1 * Megabytes );
-    tables: [..] FBTableInfo;
+    vtables: [..] VTable;
 }
 
 
 #scope_file
 
-FBTableInfo :: struct
-{
-    // This is what gets dumped to the vtable: a list of offsets to the source table, sorted by field id, starting at 0
-    fieldOffsets: [..] voffset;
-}
-
 FBTypeInfo :: struct
 {
     // (write-only?) Entry in the list of tables
-    tableEntryIndex: int;
+    vtableEntryIndex: int;
 }
 
 // FIXME Incorporate alignment rules!
@@ -174,16 +170,19 @@ BeginReflectType :: ( info: *FBTypeInfo, type: Type, r: *BinaryReflectorFB ) -> 
 {
     #if r.IsWriting
     {
-        // Introspect type to find out the size of the table for this type
+        // Introspect type to find out the size of the table that it's gonna need
         tableSize := ComputeTableSize( type );
 
-        // TODO Then push that whole amount to the buffer straight away to create the "high watermark" where a nested type would have to jump to
+        // Push that whole amount to the buffer straight away to create the "high watermark" where any nested type will have to jump to
+        PushEmpty( *r.buffer, tableSize );
         
-        // Get a slot in the global list of tables so that all parents appear in that list before their children
-        tableInfo: *FBTableInfo = Push( r.tables );
-        info.tableEntryIndex = tableInfo - r.tables.data;
+        // Get a slot for the corresponding vtable
+        // TODO Make this a separate buffer builder and push the correct size in bytes including space for all the fields
+        // TODO How do we know how many fields are actually serialised in the table in advance?
+        vtable: *VTable = Push( *r.vtables );
+        info.vtableEntryIndex = vtable - r.vtables.data;
 
-        array_reserve( *tableInfo.fieldOffsets, 8 );
+        //array_reserve( *vtable.fieldOffsets, 8 );
     }
     return true;
 }
@@ -192,11 +191,11 @@ BeginReflectField :: ( fieldId: u16, name: string, offsetFromParent: s64, info: 
 {
     #if r.IsWriting
     {
-        tableInfo: *FBTableInfo = *r.tables[ info.tableEntryIndex ];
+        vtable: *VTable = *r.vtables[ info.vtableEntryIndex ];
 
-        // Our field ids start at 1 (TODO do we actually need that), but FB starts at 0
-        EnsureSize( *tableInfo.fieldOffsets, fieldId );
-        tableInfo.fieldOffsets[ fieldId - 1 ] = offsetFromParent;
+        // Our field note ids start at 1 (TODO do we actually need that), but FB starts at 0
+        //EnsureSize( *vtable.fieldOffsets, fieldId );
+        //vtable.fieldOffsets[ fieldId - 1 ] = offsetFromParent;
     }
     return true;
 }

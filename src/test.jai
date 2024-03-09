@@ -61,6 +61,8 @@ ChunkyType :: struct
 
 TestBinarySerializerGM :: ()
 {
+    print( "___Binary:\n" );
+
     mA, mB: Monster;
     array_add( *mA.inventory, 10 );
     array_add( *mA.inventory, 20 );
@@ -83,6 +85,8 @@ TestBinarySerializerGM :: ()
 
 TestBinarySerializerFB :: ()
 {
+    print( "___Flatbuffers:\n" );
+
     mA, mB: Monster;
     array_add( *mA.inventory, 10 );
     array_add( *mA.inventory, 20 );
