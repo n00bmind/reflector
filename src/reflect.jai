@@ -115,7 +115,6 @@ FieldFlags :: enum_flags u8
 }
 FieldInfo :: struct
 {
-    //member: *Type_Info_Struct_Member;
     decl: *Code_Declaration;
     //args: [..] FieldArgs;
     id: u16;
@@ -163,7 +162,7 @@ GatherTypeInfo :: ( T: Type, st: *Type_Info_Struct, rootDecl: *Code_Declaration 
     for m, index: st.members
     {
         info := *result.fieldInfo[index];
-        //info.member = m;
+        info.name = m.name;
 
         decl := FindMemberDecl( m, stNode.block.members );
         assert( decl != null, "Couldn't find member decl node for '%'\n", m.name );
@@ -171,36 +170,38 @@ GatherTypeInfo :: ( T: Type, st: *Type_Info_Struct, rootDecl: *Code_Declaration 
 
         // Parse field id
         fieldNoteIdx, fieldNoteArgs := ParseNote( "field", decl.notes );
-        if fieldNoteIdx == -1
-            // This guy is not marked for serialization
-            continue;
+        if fieldNoteIdx != -1
+        {
+            if !fieldNoteArgs
+            {
+                // TODO This is also way too verbose for my liking, and imo any metaprogram errors should be annotated by which metaprogram emitted them!
+                compiler_report( "'field' note requires a u16 'id' argument (in parenthesis)", make_location( decl.notes[fieldNoteIdx] ) );
+                return false, result;
+            }
 
-        if !fieldNoteArgs
-        {
-            // TODO This is also way too verbose for my liking, and imo any metaprogram errors should be annotated by which metaprogram emitted them!
-            compiler_report( "'field' note requires a u16 'id' argument (in parenthesis)", make_location( decl.notes[fieldNoteIdx] ) );
-            return false, result;
-        }
+            // NOTE string_to_int does not currently check for overflows if a small type is specified
+            fieldId, idOk, _ := string_to_int( fieldNoteArgs[0], 10 );
+            if !idOk
+            {
+                compiler_report( "Unable to parse field 'id' argument into a u16", make_location( decl.notes[fieldNoteIdx] ) );
+                return false, result;
+            }
+            else if fieldId <= 0
+            {
+                compiler_report( "Field 'id' must be a positive (non-zero) integer", make_location( decl.notes[fieldNoteIdx] ) );
+                return false, result;
+            }
+            else if fieldId > U16_MAX
+            {
+                compiler_report( "Field 'id' argument is too big", make_location( decl.notes[fieldNoteIdx] ) );
+                return false, result;
+            }
 
-        // NOTE string_to_int does not currently check for overflows if a small type is specified
-        fieldId, idOk, _ := string_to_int( fieldNoteArgs[0], 10 );
-        if !idOk
-        {
-            compiler_report( "Unable to parse field 'id' argument into a u16", make_location( decl.notes[fieldNoteIdx] ) );
-            return false, result;
-        }
-        else if fieldId <= 0
-        {
-            compiler_report( "Field 'id' must be a positive (non-zero) integer", make_location( decl.notes[fieldNoteIdx] ) );
-            return false, result;
-        }
-        else if fieldId > U16_MAX
-        {
-            compiler_report( "Field 'id' argument is too big", make_location( decl.notes[fieldNoteIdx] ) );
-            return false, result;
-        }
+            info.id = cast(u16)fieldId;
+            // TODO Parse optional name attribute etc.
 
-        info.id = cast(u16)fieldId;
+            result.annotatedFieldCount += 1;
+        }
 
         // Check if this is a 'packed' struct type
         // TODO There is currently no way to pass on this information to the Reflect() function for the subtype
@@ -211,16 +212,35 @@ GatherTypeInfo :: ( T: Type, st: *Type_Info_Struct, rootDecl: *Code_Declaration 
             if Contains( fieldStructType.notes, "packed" )
                 info.flags |= .Packed;
         }
+    }
 
-        // TODO Parse optional name attribute etc.
+    // If there were no annotations, simply assign a memory-order index as field id
+    if result.annotatedFieldCount == 0
+    {
+        lastOffset := -1;
+        for m, index: st.members
+        {
+            info := *result.fieldInfo[index];
 
-        result.annotatedFieldCount += 1;
+            // Not sure if there's any guarantees about the order of the entries in the members array
+            // so assert that we're always increasing the offset inside the parent struct
+            // TODO Assert macro that prints the expression and an optional msg!
+            assert( m.offset_in_bytes > lastOffset && "We assume in-memory order of members!" );
+            // FIXME This breaks with overlapped fields (unions)
+            lastOffset = m.offset_in_bytes;
+
+            assert( info.id == 0 );
+            info.id = cast(u16)(index + 1);
+        }
     }
 
     return true, result;
 }
 
-GenReflectFunction :: ( T: Type, st: *Type_Info_Struct, reflector: $Reflector, w: Workspace = -1 ) -> string #expand #compile_time
+
+#scope_file
+
+GenReflectFunction :: ( T: Type, st: *Type_Info_Struct, reflector: $Reflector ) -> string #expand #compile_time
 {
     defer free_buffers( *globalBuilder );
 
@@ -267,24 +287,9 @@ GenReflectFunction :: ( T: Type, st: *Type_Info_Struct, reflector: $Reflector, w
         append( *globalBuilder, "        defer EndReflectType( *info, r );\n" );
         append( *globalBuilder, "        \n" );
 
-        lastOffset := -1;
         for m, index: st.members
         {
             fieldInfo := *info.fieldInfo[index];
-            // If there were no annotations, simply assign a memory-order index as field id
-            if info.annotatedFieldCount == 0
-            {
-                // Not sure if there's any guarantees about the order of the entries in the members array
-                // so assert that we're always increasing the offset inside the parent struct
-                // TODO Assert macro that prints the expression and an optional msg!
-                assert( m.offset_in_bytes > lastOffset && "We assume in-memory order of members!" );
-                // FIXME This breaks with overlapped fields (unions)
-                lastOffset = m.offset_in_bytes;
-
-                assert( fieldInfo.id == 0 );
-                fieldInfo.id = cast(u16)(index + 1);
-            }
-
             if fieldInfo.id
             {
                 append( *globalBuilder, tprint( "        ReflectField( *d.%, %, \"%\", %, *info, r );\n",
@@ -299,6 +304,9 @@ GenReflectFunction :: ( T: Type, st: *Type_Info_Struct, reflector: $Reflector, w
 
     return builder_to_string( *globalBuilder );
 }
+
+
+#scope_export
 
 // Generate a separate polymorph instance and its corresponding body based on the type it was called with.
 // This way we only generate the overloads that are actually called from user code.

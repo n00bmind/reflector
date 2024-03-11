@@ -94,7 +94,7 @@ GetField :: ( fieldId: int, vt: *VTable ) -> bool, voffset
 
 BinaryReflectorFB :: struct( $IsReading2: bool )
 {
-    #as using reflector: Reflector( FBTypeInfo, IsReading2, true );
+    #as using reflector: Reflector( StaticTypeInfo, IsReading2, true );
 }
 
 BinaryReaderFB :: struct
@@ -110,16 +110,59 @@ BinaryWriterFB :: struct
     #as using binary: BinaryReflectorFB( false );
 
     buffer: BufferBuilder( 1 * Megabytes );
-    vtables: [..] VTable;
+    fields: [..] FieldInfo;
+    tables: [..] TableInfo;
+    vector: [..] VectorInfo;
+    strings: [..] StringInfo;
 }
 
 
 #scope_file
 
-FBTypeInfo :: struct
+FieldInfo :: struct
 {
-    // (write-only?) Entry in the list of tables
-    vtableEntryIndex: int;
+    type: *Type_Info_Struct_Member;
+    offset: voffset;        // Relative to start of its table, 0 = not present
+    union
+    {
+        value: *void;
+        tableIndex: s64;
+        vectorIndex: s64;
+        stringIndex: s64;
+    }
+}
+
+TableInfo :: struct
+{
+    // Position in the buffer where these were written (once we know it)
+    tablePos, vtablePos: s32;
+    firstFieldIdx, fieldCount: s32;
+    tableSize, vtableSize: u16;
+}
+
+VectorInfo :: struct
+{
+    // Position in the buffer (once we know it)
+    pos: s32;
+    count: s32;
+    data: *void;
+}
+
+StringInfo :: struct
+{
+    // Position in the buffer (once we know it)
+    pos: s32;
+    // TODO Remember to null-terminate appropriately
+    data: string;
+}
+
+StaticFieldInfo :: struct
+{
+    id: u16;
+}
+StaticTypeInfo :: struct
+{
+    fieldInfo: [] StaticFieldInfo;
 }
 
 // FIXME Incorporate alignment rules!
@@ -164,52 +207,55 @@ ComputeTableSize :: ( type: Type ) -> s64
     return totalSize;
 }
 
+GenWriteFunction :: ( T: Type, st: *Type_Info_Struct ) -> string #expand #compile_time
+{
+    rootNode, _ := #insert #run GetCodeNodesFor( type_info(T).name );
+    assert( rootNode.kind == .IDENT );
+
+    rootDecl := (cast(*Code_Ident) rootNode).resolved_declaration;
+
+    ok, info := GatherTypeInfo( T, st, rootDecl );
+    if !ok
+        return "";
+
+
+    defer free_buffers( *globalBuilder );
+
+    if info.isPacked
+    {
+        append( *globalBuilder, "    return inline ReflectPacked( d, r );\n" );
+    }
+    else
+    {
+        append( *globalBuilder, "    info: StaticTypeInfo : .{\n" );
+        append( *globalBuilder, "        .[\n" );
+        for m, index: st.members
+        {
+            fieldInfo := *info.fieldInfo[index];
+            append( *globalBuilder, tprint( "            .{ % },\n", fieldInfo.id ) );
+        }
+        append( *globalBuilder, "        ]\n" );
+        append( *globalBuilder, "    };\n" );
+        append( *globalBuilder, "    return inline ReflectStruct( d, info, r );\n" );
+    }
+
+    return builder_to_string( *globalBuilder );
+}
+
 #scope_export
 
-BeginReflectType :: ( info: *FBTypeInfo, type: Type, r: *BinaryReflectorFB ) -> bool
+// NOTE We cannot use a combined function accepting BinaryReflectorFB here, as that is still a polymorph,
+// and hence atm the compiler fails to resolve that against the generic Reflect() (accepting $Reflector)
+// However in this case I dont think that's all that important
+Reflect :: ( d: *$T/interface struct {}, r: *BinaryWriterFB ) -> ReflectResult
 {
-    #if r.IsWriting
-    {
-        // Introspect type to find out the size of the table that it's gonna need
-        tableSize := ComputeTableSize( type );
-
-        // Push that whole amount to the buffer straight away to create the "high watermark" where any nested type will have to jump to
-        PushEmpty( *r.buffer, tableSize );
-        
-        // Get a slot for the corresponding vtable
-        // TODO Make this a separate buffer builder and push the correct size in bytes including space for all the fields
-        // TODO How do we know how many fields are actually serialised in the table in advance?
-        vtable: *VTable = Push( *r.vtables );
-        info.vtableEntryIndex = vtable - r.vtables.data;
-
-        //array_reserve( *vtable.fieldOffsets, 8 );
-    }
-    return true;
+    #insert #run GenWriteFunction( T, type_info( T ) );
 }
 
-BeginReflectField :: ( fieldId: u16, name: string, offsetFromParent: s64, info: *FBTypeInfo, r: *BinaryReflectorFB ) -> bool
+Reflect :: ( d: *$T/interface struct {}, r: *BinaryReaderFB ) -> ReflectResult
 {
-    #if r.IsWriting
-    {
-        vtable: *VTable = *r.vtables[ info.vtableEntryIndex ];
-
-        // Our field note ids start at 1 (TODO do we actually need that), but FB starts at 0
-        //EnsureSize( *vtable.fieldOffsets, fieldId );
-        //vtable.fieldOffsets[ fieldId - 1 ] = offsetFromParent;
-    }
-    return true;
+    return .Ok;
 }
-
-EndReflectField :: ( fieldId: u16, info: *FBTypeInfo, r: *BinaryReflectorFB )
-{
-
-}
-
-EndReflectType :: ( info: *FBTypeInfo, r: *BinaryReflectorFB )
-{
-
-}
-
 
 Reflect :: inline ( d: *$T, r: *BinaryReflectorFB ) -> ReflectResult
 #modify
@@ -218,6 +264,25 @@ Reflect :: inline ( d: *$T, r: *BinaryReflectorFB ) -> ReflectResult
     return ti.type != .STRUCT;
 }
 {
+
+    return .Ok;
+}
+
+ReflectStruct :: inline ( d: *$T/interface struct {}, info: StaticTypeInfo, r: *BinaryReflectorFB ) -> ReflectResult
+{
+    #if r.IsWriting
+    {
+        table := Push( *r.tables );
+        // TODO How do we communicate this index to the parent table relative to us?
+        tableEntryIndex := table - r.tables.data;
+
+        st: *Type_Info_Struct = type_info(T);
+        for m, index: st.members
+        {
+            fieldInfo := *info.fieldInfo[index];
+            print( "#### FB writing field id %\n", fieldInfo.id );
+        }
+    }
 
     return .Ok;
 }

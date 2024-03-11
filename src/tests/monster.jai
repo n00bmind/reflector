@@ -25,15 +25,15 @@ Monster :: struct
 {
     pos: Vec3;                  @reflect_field(1)
     mana: s16 = 150;            @reflect_field(2)
-    hp: s16 = 100;              @field(3)
-    name: string = "Bob";       @field(4)
+    hp: s16 = 100;              //@field(3)
     friendly: bool = false;     @field(5)
+    name: string = "Bob";       @field(4)
     inventory: [..] u8;         @field(6)
     color: Color = .Blue;       @field(7)
     weapons: [..] Weapon;       @field(8)
     // TODO Implement unions properly
     //equipped: Equipment;        @field(9)
-    path: [..] Vec3;            @field(10)
+    path: [..] Vec3;            @field(11)
 }
 
 Equal :: ( a: [] $T, b: [] T ) -> bool
