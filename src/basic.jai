@@ -37,7 +37,12 @@ Set :: inline ( target: *void, value: u8, count: s64 )
 }
 
 
-GetMemberValueAs :: ( m: *Type_Info_Struct_Member, d: *$T/interface struct {}, $M: Type ) -> *M
+GetMemberValue :: inline ( m: *Type_Info_Struct_Member, d: *$T/interface struct {} ) -> Any
+{
+    p := cast(*u8)d + m.offset_in_bytes;
+    return Any.{ m.type, p };
+}
+GetMemberValueAs :: inline ( m: *Type_Info_Struct_Member, d: *$T/interface struct {}, $M: Type ) -> *M
 {
     p := cast(*u8)d + m.offset_in_bytes;
     return cast(*M)p;

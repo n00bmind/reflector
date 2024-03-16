@@ -94,7 +94,7 @@ GetField :: ( fieldId: int, vt: *VTable ) -> bool, voffset
 
 BinaryReflectorFB :: struct( $IsReading2: bool )
 {
-    #as using reflector: Reflector( StaticTypeInfo, IsReading2, true );
+    #as using reflector: Reflector( void, IsReading2, true );
 }
 
 BinaryReaderFB :: struct
@@ -125,7 +125,7 @@ FieldInfo :: struct
     offset: voffset;        // Relative to start of its table, 0 = not present
     union
     {
-        value: *void;
+        value: Any;
         tableIndex: s64;
         vectorIndex: s64;
         stringIndex: s64;
@@ -136,7 +136,8 @@ TableInfo :: struct
 {
     // Position in the buffer where these were written (once we know it)
     tablePos, vtablePos: s32;
-    firstFieldIdx, fieldCount: s32;
+    firstFieldIdx: s32 = -1;
+    fieldCount: s32;
     tableSize, vtableSize: u16;
 }
 
@@ -160,7 +161,7 @@ StaticFieldInfo :: struct
 {
     id: u16;
 }
-StaticTypeInfo :: struct
+StaticTypeInfo :: struct( $IsPacked: bool )
 {
     fieldInfo: [] StaticFieldInfo;
 }
@@ -207,7 +208,37 @@ ComputeTableSize :: ( type: Type ) -> s64
     return totalSize;
 }
 
-GenWriteFunction :: ( T: Type, st: *Type_Info_Struct ) -> string #expand #compile_time
+FieldType :: enum
+{
+    Ignored;
+    Inline;
+    Table;
+    Array;
+    String;
+}
+FieldTypeFor :: ( m: *Type_Info_Struct_Member ) -> FieldType
+{
+    if m.type.type ==
+    {
+        case .INTEGER; #through;
+        case .FLOAT; #through;
+        case .BOOL; #through;
+        case .ENUM;
+            return .Inline;
+
+        case .STRUCT;
+            return .Table;
+
+        case .ARRAY;
+            return .Array;
+
+        case .STRING;
+            return .String;
+    }
+    return .Ignored;
+}
+
+GenStaticTypeInfo :: ( T: Type, st: *Type_Info_Struct ) -> string #expand #compile_time
 {
     rootNode, _ := #insert #run GetCodeNodesFor( type_info(T).name );
     assert( rootNode.kind == .IDENT );
@@ -221,23 +252,15 @@ GenWriteFunction :: ( T: Type, st: *Type_Info_Struct ) -> string #expand #compil
 
     defer free_buffers( *globalBuilder );
 
-    if info.isPacked
+    append( *globalBuilder, tprint( "StaticTypeInfo(%).{\n", info.isPacked ) );
+    append( *globalBuilder, "    .[\n" );
+    for m, index: st.members
     {
-        append( *globalBuilder, "    return inline ReflectPacked( d, r );\n" );
+        fieldInfo := *info.fieldInfo[index];
+        append( *globalBuilder, tprint( "        .{ % },\n", fieldInfo.id ) );
     }
-    else
-    {
-        append( *globalBuilder, "    info: StaticTypeInfo : .{\n" );
-        append( *globalBuilder, "        .[\n" );
-        for m, index: st.members
-        {
-            fieldInfo := *info.fieldInfo[index];
-            append( *globalBuilder, tprint( "            .{ % },\n", fieldInfo.id ) );
-        }
-        append( *globalBuilder, "        ]\n" );
-        append( *globalBuilder, "    };\n" );
-        append( *globalBuilder, "    return inline ReflectStruct( d, info, r );\n" );
-    }
+    append( *globalBuilder, "    ],\n" );
+    append( *globalBuilder, "};\n" );
 
     return builder_to_string( *globalBuilder );
 }
@@ -249,7 +272,15 @@ GenWriteFunction :: ( T: Type, st: *Type_Info_Struct ) -> string #expand #compil
 // However in this case I dont think that's all that important
 Reflect :: ( d: *$T/interface struct {}, r: *BinaryWriterFB ) -> ReflectResult
 {
-    #insert #run GenWriteFunction( T, type_info( T ) );
+    info :: #insert #run GenStaticTypeInfo( T, type_info( T ) );
+
+    #if info.IsPacked
+        return inline ReflectPacked( d, r );
+    else
+    {
+        result, _ := inline ReflectStruct( d, info, r );
+        return result;
+    }
 }
 
 Reflect :: ( d: *$T/interface struct {}, r: *BinaryReaderFB ) -> ReflectResult
@@ -268,23 +299,45 @@ Reflect :: inline ( d: *$T, r: *BinaryReflectorFB ) -> ReflectResult
     return .Ok;
 }
 
-ReflectStruct :: inline ( d: *$T/interface struct {}, info: StaticTypeInfo, r: *BinaryReflectorFB ) -> ReflectResult
+ReflectStruct :: inline ( d: *$T/interface struct {}, info: StaticTypeInfo, r: *BinaryReflectorFB ) -> ReflectResult, s64
 {
     #if r.IsWriting
     {
         table := Push( *r.tables );
-        // TODO How do we communicate this index to the parent table relative to us?
         tableEntryIndex := table - r.tables.data;
+
+        fieldCount: s32 = 0;
+        // First field in a table is the offset to its vtable
+        curOffset: voffset = size_of(voffset);
 
         st: *Type_Info_Struct = type_info(T);
         for m, index: st.members
         {
             fieldInfo := *info.fieldInfo[index];
-            print( "#### FB writing field id %\n", fieldInfo.id );
+            if !fieldInfo.id
+                continue;
+
+            field := Push( *r.fields );
+            if table.firstFieldIdx == -1
+                table.firstFieldIdx = cast(s32)(field - r.fields.data);
+
+            field.type = *m;
+            field.offset = curOffset;
+
+            v := GetMemberValueAs( *m, d, get_type( m.type ) );
+            if FieldTypeFor( *m ) ==
+            {
+                case .Inline;
+                    field.value = v;
+                case .Table;
+                    result, field.tableIndex = ReflectStruct( v, r );
+            }
+
+            fieldCount += 1;
         }
     }
 
-    return .Ok;
+    return .Ok, tableEntryIndex;
 }
 
 ReflectPacked :: inline ( d: *$T/interface struct {}, r: *BinaryReflectorFB ) -> ReflectResult
