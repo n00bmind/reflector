@@ -94,6 +94,11 @@ Push :: ( array: *[..] $T ) -> *T
     return array_add( array );
 }
 
+Push :: ( array: *[..] $T, item: T )
+{
+    array_add( array, item );
+}
+
 Pop :: ( array: *[..] $T, out: *T )
 {
     <<out = (<<array)[array.count - 1];

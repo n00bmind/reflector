@@ -161,7 +161,7 @@ StaticFieldInfo :: struct
 {
     id: u16;
 }
-StaticTypeInfo :: struct( $IsPacked: bool )
+StaticTypeInfo :: struct //( $IsPacked: bool )
 {
     fieldInfo: [] StaticFieldInfo;
 }
@@ -238,6 +238,10 @@ FieldTypeFor :: ( m: *Type_Info_Struct_Member ) -> FieldType
     return .Ignored;
 }
 
+
+// TODO I think we'll need to generate one of these for all struct types in a program for which we ever call Reflect()
+// Then put them all in a #placeholder hash table so that the runtime can easily access any info about each type
+// Placeholders seem to require a metaprogram though.. However check how_to/470_running_hooks_... for an interesting approach
 GenStaticTypeInfo :: ( T: Type, st: *Type_Info_Struct ) -> string #expand #compile_time
 {
     rootNode, _ := #insert #run GetCodeNodesFor( type_info(T).name );
@@ -249,10 +253,10 @@ GenStaticTypeInfo :: ( T: Type, st: *Type_Info_Struct ) -> string #expand #compi
     if !ok
         return "";
 
-
     defer free_buffers( *globalBuilder );
 
-    append( *globalBuilder, tprint( "StaticTypeInfo(%).{\n", info.isPacked ) );
+    //append( *globalBuilder, tprint( "StaticTypeInfo(%).{\n", info.isPacked ) );
+    append( *globalBuilder, "StaticTypeInfo.{\n" );
     append( *globalBuilder, "    .[\n" );
     for m, index: st.members
     {
@@ -274,17 +278,20 @@ Reflect :: ( d: *$T/interface struct {}, r: *BinaryWriterFB ) -> ReflectResult
 {
     info :: #insert #run GenStaticTypeInfo( T, type_info( T ) );
 
-    #if info.IsPacked
-        return inline ReflectPacked( d, r );
-    else
-    {
-        result, _ := inline ReflectStruct( d, info, r );
-        return result;
-    }
+    //#if info.IsPacked
+        //return inline ReflectPacked( d, r );
+    //else
+    //{
+        //result, _ := ReflectStruct( d, info, r );
+        //return result;
+    //}
+    return .Ok;
 }
 
 Reflect :: ( d: *$T/interface struct {}, r: *BinaryReaderFB ) -> ReflectResult
 {
+    info :: #insert #run GenStaticTypeInfo( T, type_info( T ) );
+
     return .Ok;
 }
 
@@ -299,7 +306,7 @@ Reflect :: inline ( d: *$T, r: *BinaryReflectorFB ) -> ReflectResult
     return .Ok;
 }
 
-ReflectStruct :: inline ( d: *$T/interface struct {}, info: StaticTypeInfo, r: *BinaryReflectorFB ) -> ReflectResult, s64
+ReflectStruct :: ( d: *$T/interface struct {}, info: StaticTypeInfo, r: *BinaryReflectorFB ) -> ReflectResult, s64
 {
     #if r.IsWriting
     {
@@ -324,7 +331,7 @@ ReflectStruct :: inline ( d: *$T/interface struct {}, info: StaticTypeInfo, r: *
             field.type = *m;
             field.offset = curOffset;
 
-            v := GetMemberValueAs( *m, d, get_type( m.type ) );
+            v := GetMemberValue( *m, d );
             if FieldTypeFor( *m ) ==
             {
                 case .Inline;
@@ -344,5 +351,52 @@ ReflectPacked :: inline ( d: *$T/interface struct {}, r: *BinaryReflectorFB ) ->
 {
     //ReflectRawBytes( bytes_of( d ), r );
     return .Ok;
+}
+
+
+// FIXME Must be a hashtable
+#no_reset globalStaticTypeInfo: [..] StaticTypeInfo;
+
+GenAllStaticTypeInfo :: ( stNode: *Code_Struct ) #compile_time
+{
+    print( "######## GenAllStaticTypeInfo called for struct %\n", stNode.defined_type.name );
+    for stNode.notes
+        print( "%\n", <<it );
+    // TODO Generate a mapping of *Type_Info_Struct to its StaticTypeInfo
+} @runWithStructNodes
+
+
+//_____________________________________________
+
+#if 0
+{
+    PushField :: ( f: Any, fields: *[..] FieldInfo ) -> int
+    {
+
+    }
+
+    Reflect :: ( d: *Monster, r: *BinaryWriterFB ) -> ReflectResult
+    {
+        table := Push( *r.tables );
+        tableEntryIndex := table - r.tables.data;
+
+        fieldCount: s32 = 0;
+        // First field in a table is the offset to its vtable
+        curOffset: voffset = size_of(voffset);
+
+        table.fieldCount = 8;
+        table.maxId = 11; // ?
+
+            fieldIdx := PushField( d.pos, *r.fields );
+        table.firstFieldIdx = fieldIdx;
+        PushField( d.mana,      *r.fields );
+        PushField( d.hp,        *r.fields );
+        PushField( d.friendly,  *r.fields );
+        PushField( d.name,      *r.fields );
+        PushField( d.inventory, *r.fields );
+        PushField( d.color,     *r.fields );
+        PushField( d.weapons,   *r.fields );
+        PushField( d.path,      *r.fields );
+    }
 }
 

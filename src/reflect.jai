@@ -272,7 +272,7 @@ GenReflectFunction :: ( T: Type, st: *Type_Info_Struct, reflector: $Reflector ) 
     {
         // If no member fields have been identified, and this is not a 'packed' struct, default to in-memory-order consecutive automatic ids,
         // so that if the user decides in the future he wants to change the default, old data can still be read
-        if info.annotatedFieldCount == 0
+        if false //info.annotatedFieldCount == 0
         {
             // TODO All warnings should go to a file by default probably?
             ReportWarning( make_location( rootDecl ),
