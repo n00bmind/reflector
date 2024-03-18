@@ -1,4 +1,6 @@
 #load "reflect.jai";
+#load "basic.jai";
+#load "datatypes.jai";
 
 //
 // Binary reflector in the style of Glowmade

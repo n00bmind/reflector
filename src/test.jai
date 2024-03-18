@@ -15,14 +15,6 @@ main :: ()
 
 
     print( "\n\n___________\n" );
-    // FIXME compiler_get_nodes() errors if the type is not visible from reflect.jai
-    //Vecf :: struct
-    //{
-        //x, y, z: float;
-    //}
-    //posf: Vecf;
-    //print( "Reflect() for type % is: %\n", type_of(posf),
-           //type_to_string( type_info(type_of( #procedure_of_call Reflect( *posf, *writer ) )) ) );
 
     BenchBinaryReader();
 }

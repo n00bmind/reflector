@@ -1,3 +1,5 @@
+// TODO This generates redeclaration errors.. so how is one supposed to resolve transitive dependencies?
+//#load "reflect.jai";
 
 //
 // Binary reflector for the Flatbuffers format
@@ -157,14 +159,6 @@ StringInfo :: struct
     data: string;
 }
 
-StaticFieldInfo :: struct
-{
-    id: u16;
-}
-StaticTypeInfo :: struct //( $IsPacked: bool )
-{
-    fieldInfo: [] StaticFieldInfo;
-}
 
 // FIXME Incorporate alignment rules!
 ComputeTableSize :: ( type: Type ) -> s64
@@ -239,35 +233,6 @@ FieldTypeFor :: ( m: *Type_Info_Struct_Member ) -> FieldType
 }
 
 
-// TODO I think we'll need to generate one of these for all struct types in a program for which we ever call Reflect()
-// Then put them all in a #placeholder hash table so that the runtime can easily access any info about each type
-// Placeholders seem to require a metaprogram though.. However check how_to/470_running_hooks_... for an interesting approach
-GenStaticTypeInfo :: ( T: Type, st: *Type_Info_Struct ) -> string #expand #compile_time
-{
-    rootNode, _ := #insert #run GetCodeNodesFor( type_info(T).name );
-    assert( rootNode.kind == .IDENT );
-
-    rootDecl := (cast(*Code_Ident) rootNode).resolved_declaration;
-
-    ok, info := GatherTypeInfo( T, st, rootDecl );
-    if !ok
-        return "";
-
-    defer free_buffers( *globalBuilder );
-
-    //append( *globalBuilder, tprint( "StaticTypeInfo(%).{\n", info.isPacked ) );
-    append( *globalBuilder, "StaticTypeInfo.{\n" );
-    append( *globalBuilder, "    .[\n" );
-    for m, index: st.members
-    {
-        fieldInfo := *info.fieldInfo[index];
-        append( *globalBuilder, tprint( "        .{ % },\n", fieldInfo.id ) );
-    }
-    append( *globalBuilder, "    ],\n" );
-    append( *globalBuilder, "};\n" );
-
-    return builder_to_string( *globalBuilder );
-}
 
 #scope_export
 
@@ -276,8 +241,6 @@ GenStaticTypeInfo :: ( T: Type, st: *Type_Info_Struct ) -> string #expand #compi
 // However in this case I dont think that's all that important
 Reflect :: ( d: *$T/interface struct {}, r: *BinaryWriterFB ) -> ReflectResult
 {
-    info :: #insert #run GenStaticTypeInfo( T, type_info( T ) );
-
     //#if info.IsPacked
         //return inline ReflectPacked( d, r );
     //else
@@ -290,8 +253,6 @@ Reflect :: ( d: *$T/interface struct {}, r: *BinaryWriterFB ) -> ReflectResult
 
 Reflect :: ( d: *$T/interface struct {}, r: *BinaryReaderFB ) -> ReflectResult
 {
-    info :: #insert #run GenStaticTypeInfo( T, type_info( T ) );
-
     return .Ok;
 }
 
@@ -306,7 +267,7 @@ Reflect :: inline ( d: *$T, r: *BinaryReflectorFB ) -> ReflectResult
     return .Ok;
 }
 
-ReflectStruct :: ( d: *$T/interface struct {}, info: StaticTypeInfo, r: *BinaryReflectorFB ) -> ReflectResult, s64
+ReflectStruct :: ( d: *$T/interface struct {}, info: StructTypeInfo, r: *BinaryReflectorFB ) -> ReflectResult, s64
 {
     #if r.IsWriting
     {
@@ -354,17 +315,6 @@ ReflectPacked :: inline ( d: *$T/interface struct {}, r: *BinaryReflectorFB ) ->
 }
 
 
-// FIXME Must be a hashtable
-#no_reset globalStaticTypeInfo: [..] StaticTypeInfo;
-
-GenAllStaticTypeInfo :: ( stNode: *Code_Struct ) #compile_time
-{
-    print( "######## GenAllStaticTypeInfo called for struct %\n", stNode.defined_type.name );
-    for stNode.notes
-        print( "%\n", <<it );
-    // TODO Generate a mapping of *Type_Info_Struct to its StaticTypeInfo
-} @runWithStructNodes
-
 
 //_____________________________________________
 
@@ -387,7 +337,7 @@ GenAllStaticTypeInfo :: ( stNode: *Code_Struct ) #compile_time
         table.fieldCount = 8;
         table.maxId = 11; // ?
 
-            fieldIdx := PushField( d.pos, *r.fields );
+        fieldIdx := PushField( d.pos, *r.fields );
         table.firstFieldIdx = fieldIdx;
         PushField( d.mana,      *r.fields );
         PushField( d.hp,        *r.fields );

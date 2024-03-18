@@ -1,10 +1,7 @@
 #import "Compiler";
-#import "Bucket_Array";
 #import "Math";
 #import "String";
 
-#load "basic.jai";
-#load "datatypes.jai";
 
 
 // TODO Turn polymorph args into ReflectorFlags, most likely
@@ -124,6 +121,7 @@ FieldInfo :: struct
 
 StructTypeInfo :: struct
 {
+    location: Source_Code_Location;
     // Contains all the struct's members, not just the annotated ones
     fieldInfo: [] FieldInfo;
     annotatedFieldCount: s32;
@@ -139,19 +137,14 @@ Destroy :: ( using sti: *StructTypeInfo )
     << sti = .{};
 }
 
-GatherTypeInfo :: ( T: Type, st: *Type_Info_Struct, rootDecl: *Code_Declaration ) -> bool, StructTypeInfo #expand #compile_time
+GatherTypeInfo :: ( st: *Type_Info_Struct, stNode: *Code_Struct ) -> bool, StructTypeInfo #compile_time
 {
     result: StructTypeInfo;
     Init( *result, st.members.count );
-
-    exprNode := rootDecl.expression;
-    assert( exprNode.kind == .STRUCT, "Reflected expression node should be a .STRUCT (got %)\n", exprNode.kind );
-
-    stNode := cast(*Code_Struct) exprNode;
-    assert( stNode.defined_type == st, "Defined type in reflected expression doesn't match given type (wanted %, got %)\n", st, stNode.defined_type );
+    result.location = make_location( stNode );
 
     // First of all, check if this type was marked as 'packed'
-    packedNoteIdx, _ := ParseNote( "packed", rootDecl.notes );
+    packedNoteIdx, _ := ParseNote( "packed", stNode.notes );
     result.isPacked = packedNoteIdx != -1;
 
     // Parse all field notes & their arguments, and populate a (decl-order?) array with all the info
@@ -237,8 +230,25 @@ GatherTypeInfo :: ( T: Type, st: *Type_Info_Struct, rootDecl: *Code_Declaration 
     return true, result;
 }
 
+GenStaticTypeInfo :: ( stNode: *Code_Struct ) #compile_time
+{
+    print( "######## GenStaticTypeInfo called for struct %\n", stNode.defined_type.name );
+
+    ok, info := GatherTypeInfo( stNode.defined_type, stNode );
+    assert( ok, "GatherTypeInfo failed for %", stNode.defined_type );
+
+    table_set( *globalStructTypeInfoTable, stNode.defined_type, info );
+
+} @runForReflectedStructs
+
 
 #scope_file
+
+#import "Hash_Table";
+
+// NOTE Remember! Only structs for which we're calling Reflect() will appear here!
+#no_reset globalStructTypeInfoTable: Table(*Type_Info_Struct, StructTypeInfo);
+
 
 GenReflectFunction :: ( T: Type, st: *Type_Info_Struct, reflector: $Reflector ) -> string #expand #compile_time
 {
@@ -246,14 +256,29 @@ GenReflectFunction :: ( T: Type, st: *Type_Info_Struct, reflector: $Reflector ) 
 
     // Find the code node for the given type declaration, so we can access exact node locations for error reporting
     // Can't use 'st.name' here, as that'd require a closure
+
+    // FIXME We want to be able to use the globalStructTypeInfoTable for this instead! i.e.
+    //info := table_find_pointer( *globalStructTypeInfoTable, st );
+    // Problem is, in this case we're running unpredictably interleaved with the 'runForReflectedStructs' invocations, meaning
+    // there's no way to guarantee that the StructTypeInfo for the type we want will be in the table by the time we get here.. ><'
+    // Would need a way of "directing" the compilation order of stuff so that runForReflectedStructs happens first..
+    // See Metaprogram_Plugins.jai module for some comments on how placeholders can naturally stall the compilation of stuff that uses them
+    // Perhaps one way would be to have the final lookup table be generated entirely in one go and set it as a placeholder
+    // that gets accesed here?
+
     // TODO Actually check second return value for ambiguities etc
     // TODO This causes compilation errors for types that are not visible from this file
     rootNode, _ := #insert #run GetCodeNodesFor( type_info(T).name );
     assert( rootNode.kind == .IDENT );
 
     rootDecl := (cast(*Code_Ident) rootNode).resolved_declaration;
+    exprNode := rootDecl.expression;
+    assert( exprNode.kind == .STRUCT, "Reflected expression node should be a .STRUCT (got %)\n", exprNode.kind );
 
-    ok, info := GatherTypeInfo( T, st, rootDecl );
+    stNode := cast(*Code_Struct) exprNode;
+    assert( stNode.defined_type == st, "Defined type in reflected expression doesn't match given type (wanted %, got %)\n", st, stNode.defined_type );
+
+    ok, info := GatherTypeInfo( st, stNode );
     if !ok
         return "";
 

@@ -3,6 +3,7 @@
 #import "System";
 #import "String";
 #import "Math";
+#import "Hash_Table";
 
 #load "src/basic.jai";
 
@@ -91,8 +92,11 @@ MessageLoop :: ( w: Workspace )
                 header := tc.expression;
 
                 // If it is a procedure we want to run, make note of it for later.
-                if HasNote( header, "runWithStructNodes" )
-                    array_add( *globalProceduresToRun, header );
+                if HasNote( header, "runForReflectedStructs" )
+                {
+                    assert( runForReflectedStructs == null, "Should have only a single procedure marked with '@runForReflectedStructs'" );
+                    runForReflectedStructs = header;
+                }
 
                 // Examine all Reflect() calls and make a note of the type of the first argument
                 if header.name == "Reflect"
@@ -103,7 +107,7 @@ MessageLoop :: ( w: Workspace )
                     {
                         st := cast(*Type_Info_Struct) inst.result;
                         //print( "###### Reflect called with arg %\n", st.name );
-                        array_add( *globalReflectedStructs, st );
+                        find_or_add( *globalReflectedStructs, st );
                     }
                 }
             }
@@ -114,20 +118,20 @@ MessageLoop :: ( w: Workspace )
             if phase.phase ==
             {
                 case .TYPECHECKED_ALL_WE_CAN;
-                    // For each procedure we want to run, generate a #run directive and add that string to the target program.
-                    for p: globalProceduresToRun
+                    // Generate a #run directive of our generator procedure for each struct we care about and add it to the target program
+                    if runForReflectedStructs
                     {
                         for globalStructNodes
                         {
-                            if Contains( globalReflectedStructs, it.defined_type )
+                            if table_contains( *globalReflectedStructs, it.defined_type )
                             {
-                                s := tprint( "#run %( cast(*Code_Struct) 0x% );", p.name, it );
+                                s := tprint( "#run %( cast(*Code_Struct) 0x% );", runForReflectedStructs.name, it );
                                 add_build_string( s, message.workspace );
                             }
                         }
                     }
 
-                    // Reset the arrays so we don't emit duplicate runs for these procedures next time we get a TYPECHECKED_ALL_WE_CAN.
+                    // Reset the array so we don't emit runs for the same structs in the next TYPECHECKED_ALL_WE_CAN msg
                     array_reset( *globalStructNodes );
 
                 case .PRE_WRITE_EXECUTABLE;
@@ -152,6 +156,6 @@ HasNote :: (header: *Code_Procedure_Header, note: string) -> bool {
 
 
 globalStructNodes: [..] *Code_Struct;
-// FIXME Should be a set
-globalReflectedStructs: [..] *Type_Info_Struct;
-globalProceduresToRun: [..] *Code_Procedure_Header;
+// We don't ever bother to store anything for the value here..
+globalReflectedStructs: Table(*Type_Info_Struct, bool);
+runForReflectedStructs: *Code_Procedure_Header;
