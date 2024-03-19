@@ -230,23 +230,30 @@ GatherTypeInfo :: ( st: *Type_Info_Struct, stNode: *Code_Struct ) -> bool, Struc
     return true, result;
 }
 
-GenStaticTypeInfo :: ( stNode: *Code_Struct ) #compile_time
+GenStaticTypeInfo :: ( stNodes: [] *Code_Struct ) #compile_time
 {
-    print( "######## GenStaticTypeInfo called for struct %\n", stNode.defined_type.name );
+    print( "######## GenStaticTypeInfo called for structs:\n" );
+    for stNodes
+    {
+        print( "%\n", it.defined_type.name );
 
-    ok, info := GatherTypeInfo( stNode.defined_type, stNode );
-    assert( ok, "GatherTypeInfo failed for %", stNode.defined_type );
+        ok, info := GatherTypeInfo( it.defined_type, it );
+        assert( ok, "GatherTypeInfo failed for %", it.defined_type );
 
-    table_set( *globalStructTypeInfoTable, stNode.defined_type, info );
+        table_set( *globalStructTypeInfoTable, it.defined_type, info );
+    }
 
 } @runForReflectedStructs
 
 
-#scope_file
+#scope_module
 
 #import "Hash_Table";
 
+//REFLECT_MODULE_SCOPE :: #code {};     // This is here so we can insert the declaration of globalReflectedStructNodes into the right place
+
 // NOTE Remember! Only structs for which we're calling Reflect() will appear here!
+#placeholder globalReflectedStructNodes;
 #no_reset globalStructTypeInfoTable: Table(*Type_Info_Struct, StructTypeInfo);
 
 
@@ -268,15 +275,34 @@ GenReflectFunction :: ( T: Type, st: *Type_Info_Struct, reflector: $Reflector ) 
 
     // TODO Actually check second return value for ambiguities etc
     // TODO This causes compilation errors for types that are not visible from this file
-    rootNode, _ := #insert #run GetCodeNodesFor( type_info(T).name );
-    assert( rootNode.kind == .IDENT );
+    #if 0
+    {
+        rootNode, _ := #insert #run GetCodeNodesFor( type_info(T).name );
+        assert( rootNode.kind == .IDENT );
 
-    rootDecl := (cast(*Code_Ident) rootNode).resolved_declaration;
-    exprNode := rootDecl.expression;
-    assert( exprNode.kind == .STRUCT, "Reflected expression node should be a .STRUCT (got %)\n", exprNode.kind );
+        rootDecl := (cast(*Code_Ident) rootNode).resolved_declaration;
+        exprNode := rootDecl.expression;
+        assert( exprNode.kind == .STRUCT, "Reflected expression node should be a .STRUCT (got %)\n", exprNode.kind );
 
-    stNode := cast(*Code_Struct) exprNode;
-    assert( stNode.defined_type == st, "Defined type in reflected expression doesn't match given type (wanted %, got %)\n", st, stNode.defined_type );
+        stNode := cast(*Code_Struct) exprNode;
+        assert( stNode.defined_type == st, "Defined type in reflected expression doesn't match given type (wanted %, got %)\n", st, stNode.defined_type );
+    }
+    else
+    {
+        c := #code,typed globalReflectedStructNodes;
+        print( "##### globalReflectedStructNodes has type %\n", get_root_type( c ) );
+        print( "##### globalReflectedStructNodes has % code nodes\n", globalReflectedStructNodes.count );
+        stNode: *Code_Struct = null;
+        for globalReflectedStructNodes
+        {
+            if it.defined_type == st
+            {
+                stNode = it;
+                break;
+            }
+        }
+        assert( stNode != null, "Code node for type '%' not available", st.name );
+    }
 
     ok, info := GatherTypeInfo( st, stNode );
     if !ok
@@ -300,7 +326,7 @@ GenReflectFunction :: ( T: Type, st: *Type_Info_Struct, reflector: $Reflector ) 
         if false //info.annotatedFieldCount == 0
         {
             // TODO All warnings should go to a file by default probably?
-            ReportWarning( make_location( rootDecl ),
+            ReportWarning( info.location,
                            "Structured type '%' will be serialised but has no serialisation notes. Will default to memory-order fields.",
                            st.name );
         }

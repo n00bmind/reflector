@@ -210,9 +210,9 @@ FieldType :: enum
     Array;
     String;
 }
-FieldTypeFor :: ( m: *Type_Info_Struct_Member ) -> FieldType
+FieldTypeFor :: ( t: *Type_Info ) -> FieldType
 {
-    if m.type.type ==
+    if t.type ==
     {
         case .INTEGER; #through;
         case .FLOAT; #through;
@@ -293,7 +293,7 @@ ReflectStruct :: ( d: *$T/interface struct {}, info: StructTypeInfo, r: *BinaryR
             field.offset = curOffset;
 
             v := GetMemberValue( *m, d );
-            if FieldTypeFor( *m ) ==
+            if FieldTypeFor( m.type ) ==
             {
                 case .Inline;
                     field.value = v;
