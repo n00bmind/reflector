@@ -41,6 +41,11 @@ GetCodeNodesFor :: ( ident: string ) -> string #compile_time
     return tprint( "compiler_get_nodes( % );\n", ident );
 }
 
+PlaceholderFor :: ( ti: *Type_Info ) -> string #compile_time
+{
+    return tprint( "_struct_node_%;", ti );
+}
+
 FindMemberDecl :: ( m: Type_Info_Struct_Member, members: [] *Code_Scope_Entry ) -> *Code_Declaration
 {
     for members
@@ -253,7 +258,7 @@ GenStaticTypeInfo :: ( stNodes: [] *Code_Struct ) #compile_time
 //REFLECT_MODULE_SCOPE :: #code {};     // This is here so we can insert the declaration of globalReflectedStructNodes into the right place
 
 // NOTE Remember! Only structs for which we're calling Reflect() will appear here!
-#placeholder globalReflectedStructNodes;
+//#placeholder globalReflectedStructNodes;
 #no_reset globalStructTypeInfoTable: Table(*Type_Info_Struct, StructTypeInfo);
 
 
@@ -262,19 +267,7 @@ GenReflectFunction :: ( T: Type, st: *Type_Info_Struct, reflector: $Reflector ) 
     defer free_buffers( *globalBuilder );
 
     // Find the code node for the given type declaration, so we can access exact node locations for error reporting
-    // Can't use 'st.name' here, as that'd require a closure
 
-    // FIXME We want to be able to use the globalStructTypeInfoTable for this instead! i.e.
-    //info := table_find_pointer( *globalStructTypeInfoTable, st );
-    // Problem is, in this case we're running unpredictably interleaved with the 'runForReflectedStructs' invocations, meaning
-    // there's no way to guarantee that the StructTypeInfo for the type we want will be in the table by the time we get here.. ><'
-    // Would need a way of "directing" the compilation order of stuff so that runForReflectedStructs happens first..
-    // See Metaprogram_Plugins.jai module for some comments on how placeholders can naturally stall the compilation of stuff that uses them
-    // Perhaps one way would be to have the final lookup table be generated entirely in one go and set it as a placeholder
-    // that gets accesed here?
-
-    // TODO Actually check second return value for ambiguities etc
-    // TODO This causes compilation errors for types that are not visible from this file
     #if 0
     {
         rootNode, _ := #insert #run GetCodeNodesFor( type_info(T).name );
@@ -289,19 +282,10 @@ GenReflectFunction :: ( T: Type, st: *Type_Info_Struct, reflector: $Reflector ) 
     }
     else
     {
-        c := #code,typed globalReflectedStructNodes;
-        print( "##### globalReflectedStructNodes has type %\n", get_root_type( c ) );
-        print( "##### globalReflectedStructNodes has % code nodes\n", globalReflectedStructNodes.count );
-        stNode: *Code_Struct = null;
-        for globalReflectedStructNodes
-        {
-            if it.defined_type == st
-            {
-                stNode = it;
-                break;
-            }
-        }
+        // TODO Explain!
+        stNode :: #insert #run PlaceholderFor( type_info(T) );
         assert( stNode != null, "Code node for type '%' not available", st.name );
+        print( "##### Reflecting stNode for '%'\n", stNode.defined_type.name );
     }
 
     ok, info := GatherTypeInfo( st, stNode );
