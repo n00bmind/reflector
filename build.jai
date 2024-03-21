@@ -6,6 +6,7 @@
 #import "Hash_Table";
 
 #load "src/basic.jai";
+#load "src/reflect.jai"; // For StructNodeIdentFor
 
 build :: ()
 {
@@ -69,6 +70,10 @@ build :: ()
 
 #scope_file
 
+EmitStructCodeNodes :: true;
+PrintDebugLogs :: false;
+
+
 MessageLoop :: ( w: Workspace )
 {
     while true
@@ -78,107 +83,119 @@ MessageLoop :: ( w: Workspace )
         {
         case .TYPECHECKED;
             typechecked := cast(*Message_Typechecked) message;
-            print( "# Got msg TYPECHECKED (% things: % headers, % bodies, % structs)\n", typechecked.all.count,
-                   typechecked.procedure_headers.count, typechecked.procedure_bodies.count, typechecked.structs.count );
-
-            // Add the code node of each struct to a list
-            // FIXME Do this the other way around: Add code nodes to a hashtable indexed by their defined_type
-            // Then as soon as procedure headers come in we can emit both the placeholder and its definition
-            // TODO Compare compile times before & after!
-            for tc: typechecked.structs
+            #if PrintDebugLogs
             {
-                stNode := cast(*Code_Struct) tc.expression;
-                if stNode.defined_type.name
-                    array_add( *globalStructNodes, stNode );
+                print( "# Got msg TYPECHECKED (% things: % headers, % bodies, % structs)\n", typechecked.all.count,
+                       typechecked.procedure_headers.count, typechecked.procedure_bodies.count, typechecked.structs.count );
             }
 
-            for tc: typechecked.procedure_headers
+            #if EmitStructCodeNodes
             {
-                header := tc.expression;
-
-                // If it is a procedure we want to run, make note of it for later.
-                if HasNote( header, "runForReflectedStructs" )
+                // Add the code node of each struct to a table
+                for tc: typechecked.structs
                 {
-                    assert( runForReflectedStructs == null, "Should have only a single procedure marked with '@runForReflectedStructs'" );
-                    runForReflectedStructs = header;
+                    stNode := cast(*Code_Struct) tc.expression;
+                    if stNode.defined_type.name
+                        table_set( *globalStructNodes, stNode.defined_type, stNode );
                 }
 
-                // Examine all Reflect() calls and make a note of the type of the first argument
-                if header.name == "Reflect"
-                    && header.arguments.count == 2 && header.arguments[0].type_inst.pointer_to != null
+                for tc: typechecked.procedure_headers
                 {
-                    inst := header.arguments[0].type_inst.pointer_to;
-                    if inst.result.type == .STRUCT
-                    {
-                        st := cast(*Type_Info_Struct) inst.result;
-                        v, newlyAdded := find_or_add( *globalReflectedStructs, st );
-                        if newlyAdded
-                        {
-                            print( "##### Found Reflect for type %\n", st.name );
-                            // Set value to false when adding a new type to indicate we haven't emitted the node for it yet
-                            <<v = false;
+                    header := tc.expression;
 
-                            // TODO Seems like we dont even need the placeholder!
-                            // Add a placeholder with a unique name for this Type_Info pointer
-                            // The relevant Reflect() function will know to look for it
-                            //str := tprint( "#placeholder _struct_node_%;\n", st );
-                            //add_build_string( str, message.workspace ); //, code = REFLECT_MODULE_SCOPE );
+                    // If it is a procedure we want to run, make note of it for later.
+                    args: string;
+                    if HasNote( header, "runAfterTypechecking", *args )
+                    {
+                        array_add( *globalRunners, header );
+                        array_add( *globalRunnerArgs, args );
+                    }
+
+                    // Examine all Reflect() calls and make a note of the type of the first argument
+                    // If it's a pointer to some struct, emit its Code_Struct node pointer as a program constant
+                    if header.name == "Reflect"
+                        && header.arguments.count == 2 && header.arguments[0].type_inst.pointer_to != null
+                    {
+                        inst := header.arguments[0].type_inst.pointer_to;
+                        if inst.result.type == .STRUCT
+                        {
+                            st := cast(*Type_Info_Struct) inst.result;
+
+                            v, newlyAdded := find_or_add( *globalReflectedTypes, st );
+                            if newlyAdded
+                            {
+                                #if PrintDebugLogs
+                                {
+                                    print( "##### Found Reflect for type %\n", st.name );
+                                }
+
+                                // TODO Seems like we dont even need the placeholder!
+                                // Add a placeholder with a unique name for this Type_Info pointer
+                                // The relevant Reflect() function will know to look for it
+                                //str := tprint( "#placeholder _struct_node_%;\n", st );
+                                //add_build_string( str, message.workspace ); //, code = REFLECT_MODULE_SCOPE );
+
+                                #if PrintDebugLogs
+                                {
+                                    print( "##### Emit node for %\n", st.name );
+                                }
+
+                                // Find its node
+                                node, nodeFound := table_find( *globalStructNodes, st );
+                                // TODO Do we need to delay unavailable nodes until we get a TYPECHECKED_ALL_WE_CAN msg?
+                                assert( nodeFound, "Didn't typecheck node for type '%' in time to emit it", st.name );
+
+                                str := tprint( "% :: cast(*Code_Struct) 0x%;\n", StructNodeIdentFor( st, false ), node );
+                                add_build_string( str, message.workspace ); //, code = REFLECT_MODULE_SCOPE );
+
+                                // Also add it to the list to emit them all at the end as an array
+                                array_add( *globalNodesTable, node );
+                            }
                         }
                     }
                 }
             }
-
 
         case .PHASE;
             phase := cast(*Message_Phase) message;
             if phase.phase ==
             {
                 case .ALL_SOURCE_CODE_PARSED;
-                    print( "# Got msg ALL_SOURCE_CODE_PARSED\n" );
+                {
+                    #if PrintDebugLogs
+                    {
+                        print( "# Got msg ALL_SOURCE_CODE_PARSED\n" );
+                    }
+                }
                 case .TYPECHECKED_ALL_WE_CAN;
                 {
-                    print( "# Got msg TYPECHECKED_ALL_WE_CAN (% waiting)\n", phase.num_items_waiting_to_typecheck );
-
-                    // Need to emit these as soon as they come in ..
-                    for globalStructNodes
+                    #if PrintDebugLogs
                     {
-                        v := table_find_pointer( *globalReflectedStructs, it.defined_type );
-                        // Exists and has not yet been emmited..
-                        if v != null && !<<v
-                        {
-                            print( "##### Emit node for %\n", it.defined_type.name );
-
-                            str := tprint( "_struct_node_%:: cast(*Code_Struct) 0x%;\n", it.defined_type, it );
-                            add_build_string( str, message.workspace ); //, code = REFLECT_MODULE_SCOPE );
-                            // Set table entry to true to indicate we have emitted this type
-                            <<v = true;
-                        }
+                        print( "# Got msg TYPECHECKED_ALL_WE_CAN (% waiting)\n", phase.num_items_waiting_to_typecheck );
                     }
 
-
-                    #if 0
+                    #if EmitStructCodeNodes
                     {
                         if phase.num_items_waiting_to_typecheck == 0 && !globalEmittedNodesTable
                         {
-                            print_to_builder( *globalBuilder, "globalReflectedStructNodes: [%] *Code_Struct: .[\n", globalReflectedStructs.count );
+                            // Emit all struct nodes as a constant array
+                            print_to_builder( *globalBuilder, "globalReflectedStructNodes: [%] *Code_Struct: .[\n", globalNodesTable.count );
 
-                            for globalStructNodes
+                            for globalNodesTable
                             {
-                                v := table_find_pointer( *globalReflectedStructs, it.defined_type );
-                                // Exists and has not yet been emmited..
-                                if v != null && !<<v
-                                {
-                                    print( "##### Emit node for %\n", it.defined_type.name );
-
-                                    print_to_builder( *globalBuilder, "    cast(*Code_Struct) 0x%,\n", it );
-                                    // Set table entry to true to indicate we have emitted this type
-                                    <<v = true;
-                                }
+                                print_to_builder( *globalBuilder, "    cast(*Code_Struct) 0x%,\n", it );
                             }
 
                             append( *globalBuilder, "];\n" );
-                            add_build_string( builder_to_string( *globalBuilder ), message.workspace ); //, code = REFLECT_MODULE_SCOPE );
 
+                            // Then emit a run directive for each of our runners
+                            for globalRunners
+                            {
+                                // Pass any arguments to the note verbatim
+                                print_to_builder( *globalBuilder, "#run %(%);", it.name, globalRunnerArgs[it_index] );
+                            }
+
+                            add_build_string( builder_to_string( *globalBuilder ), message.workspace ); //, code = REFLECT_MODULE_SCOPE );
                             free_buffers( *globalBuilder );
 
                             globalEmittedNodesTable = true;
@@ -186,8 +203,13 @@ MessageLoop :: ( w: Workspace )
                     }
                 }
                 case .PRE_WRITE_EXECUTABLE;
-                    print( "# Got msg PRE_WRITE_EXECUTABLE\n" );
+                {
                     // TODO Any diagnostic / info msgs should go here so as to not interfere with the compiler's own msgs
+                    #if PrintDebugLogs
+                    {
+                        print( "# Got msg PRE_WRITE_EXECUTABLE\n" );
+                    }
+                }
             }
 
         case .COMPLETE;
@@ -201,15 +223,33 @@ HasNote :: (header: *Code_Struct, note: string) -> bool {
     return false;
 }
 
-HasNote :: (header: *Code_Procedure_Header, note: string) -> bool {
-    for header.notes  if it.text == note  return true;
+HasNote :: ( header: *Code_Procedure_Header, note: string, args: *string ) -> bool
+{
+    for header.notes
+    {
+        if starts_with( it.text, note )
+        {
+            if args
+            {
+                // Anything in parenthesis is considered arguments to the note
+                s := slice( it.text, note.count, it.text.count - note.count );
+                if s && s[0] == #char "(" && s[s.count - 1] == #char ")"
+                {
+                    <<args = slice( s, 1, s.count - 2 );
+                }
+            }
+            return true;
+        }
+    }
     return false;
 }
 
 
 globalBuilder: String_Builder;
-globalStructNodes: [..] *Code_Struct;
-globalReflectedStructs: Table(*Type_Info_Struct, bool);
+globalStructNodes: Table(*Type_Info_Struct, *Code_Struct);
+globalReflectedTypes: Table(*Type_Info_Struct, bool);
+globalNodesTable: [..] *Code_Struct;
 globalEmittedNodesTable: bool = false;
 
-runForReflectedStructs: *Code_Procedure_Header;
+globalRunners: [..] *Code_Procedure_Header;
+globalRunnerArgs: [..] string;

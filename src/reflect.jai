@@ -30,20 +30,14 @@ SetError :: ( error: ReflectResult, r: *Reflector )
 }
 
 
-globalBuilder: String_Builder;
 
-// #insert #run this FROM COMPILE-TIME
-// TODO Probably should be cached / deduplicated?
-// TODO Extract to bricks
-// FIXME This has some "visibility issues" with non-globally defined types
-GetCodeNodesFor :: ( ident: string ) -> string #compile_time
+StructNodeIdentFor :: ( ti: *Type_Info, endStatement: bool ) -> string #compile_time
 {
-    return tprint( "compiler_get_nodes( % );\n", ident );
-}
-
-PlaceholderFor :: ( ti: *Type_Info ) -> string #compile_time
-{
-    return tprint( "_struct_node_%;", ti );
+    // Use the actual hex address as part of the identifier
+    if endStatement
+        return tprint( "_struct_node_%;", ti );
+    else
+        return tprint( "_struct_node_%", ti );
 }
 
 FindMemberDecl :: ( m: Type_Info_Struct_Member, members: [] *Code_Scope_Entry ) -> *Code_Declaration
@@ -237,7 +231,6 @@ GatherTypeInfo :: ( st: *Type_Info_Struct, stNode: *Code_Struct ) -> bool, Struc
 
 GenStaticTypeInfo :: ( stNodes: [] *Code_Struct ) #compile_time
 {
-    print( "######## GenStaticTypeInfo called for structs:\n" );
     for stNodes
     {
         print( "%\n", it.defined_type.name );
@@ -248,17 +241,18 @@ GenStaticTypeInfo :: ( stNodes: [] *Code_Struct ) #compile_time
         table_set( *globalStructTypeInfoTable, it.defined_type, info );
     }
 
-} @runForReflectedStructs
+    // Can't have spaces in notes!
+} @runAfterTypechecking(globalReflectedStructNodes)
 
 
 #scope_module
 
 #import "Hash_Table";
 
-//REFLECT_MODULE_SCOPE :: #code {};     // This is here so we can insert the declaration of globalReflectedStructNodes into the right place
+globalBuilder: String_Builder;
 
 // NOTE Remember! Only structs for which we're calling Reflect() will appear here!
-//#placeholder globalReflectedStructNodes;
+#placeholder globalReflectedStructNodes;
 #no_reset globalStructTypeInfoTable: Table(*Type_Info_Struct, StructTypeInfo);
 
 
@@ -266,28 +260,15 @@ GenReflectFunction :: ( T: Type, st: *Type_Info_Struct, reflector: $Reflector ) 
 {
     defer free_buffers( *globalBuilder );
 
-    // Find the code node for the given type declaration, so we can access exact node locations for error reporting
+    // Find the code node for the given type declaration, so we can access exact source code locations for error reporting
+    // I haven't found any way to reliably find the nodes for the struct type declaration given just the type info,
+    // so we emit them from the metaprogram and place them in a constant with a known name for each type
+    stNode :: #insert #run StructNodeIdentFor( type_info(T), true );
+    assert( stNode != null, "Code node for type '%' not available", st.name );
 
-    #if 0
-    {
-        rootNode, _ := #insert #run GetCodeNodesFor( type_info(T).name );
-        assert( rootNode.kind == .IDENT );
-
-        rootDecl := (cast(*Code_Ident) rootNode).resolved_declaration;
-        exprNode := rootDecl.expression;
-        assert( exprNode.kind == .STRUCT, "Reflected expression node should be a .STRUCT (got %)\n", exprNode.kind );
-
-        stNode := cast(*Code_Struct) exprNode;
-        assert( stNode.defined_type == st, "Defined type in reflected expression doesn't match given type (wanted %, got %)\n", st, stNode.defined_type );
-    }
-    else
-    {
-        // TODO Explain!
-        stNode :: #insert #run PlaceholderFor( type_info(T) );
-        assert( stNode != null, "Code node for type '%' not available", st.name );
-        print( "##### Reflecting stNode for '%'\n", stNode.defined_type.name );
-    }
-
+    // For runtime code, we also gather all these nodes and generate the StructTypeInfo for each of them,
+    // and index that in globalStructTypeInfoTable. However, here at compile time, the #run directive that
+    // builds that table may not have run yet, so we just go gather that info again..
     ok, info := GatherTypeInfo( st, stNode );
     if !ok
         return "";
