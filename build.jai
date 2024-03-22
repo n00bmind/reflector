@@ -74,6 +74,34 @@ EmitStructCodeNodes :: true;
 PrintDebugLogs :: false;
 
 
+TryEmitNodeFor :: ( st: *Type_Info_Struct, w: Workspace ) -> bool
+{
+    // Do we have it yet
+    node, nodeFound := table_find( *globalStructNodes, st );
+    if nodeFound
+    {
+        // TODO Seems like we dont even need the placeholder!
+        // Add a placeholder with a unique name for this Type_Info pointer
+        // The relevant Reflect() function will know to look for it
+        //str := tprint( "#placeholder _struct_node_%;\n", st );
+        //add_build_string( str, w ); //, code = REFLECT_MODULE_SCOPE );
+
+        str := tprint( "% :: cast(*Code_Struct) 0x%;\n", StructNodeIdentFor( st, false ), node );
+        add_build_string( str, w ); //, code = REFLECT_MODULE_SCOPE );
+
+        // Also add it to the list to emit them all at the end as an array
+        array_add( *globalNodesTable, node );
+
+        #if PrintDebugLogs
+        {
+            print( "##### Emitted node for %\n", st.name );
+        }
+
+        return true;
+    }
+    return false;
+}
+
 MessageLoop :: ( w: Workspace )
 {
     while true
@@ -121,35 +149,19 @@ MessageLoop :: ( w: Workspace )
                         {
                             st := cast(*Type_Info_Struct) inst.result;
 
-                            v, newlyAdded := find_or_add( *globalReflectedTypes, st );
-                            if newlyAdded
+                            emitted, newlyAdded := find_or_add( *globalReflectedTypes, st );
+                            if newlyAdded && !<<emitted
                             {
                                 #if PrintDebugLogs
                                 {
                                     print( "##### Found Reflect for type %\n", st.name );
                                 }
 
-                                // TODO Seems like we dont even need the placeholder!
-                                // Add a placeholder with a unique name for this Type_Info pointer
-                                // The relevant Reflect() function will know to look for it
-                                //str := tprint( "#placeholder _struct_node_%;\n", st );
-                                //add_build_string( str, message.workspace ); //, code = REFLECT_MODULE_SCOPE );
-
-                                #if PrintDebugLogs
+                                // If we have not yet emitted a node for this type, try to do so right away (if we have it)
+                                if TryEmitNodeFor( st, w )
                                 {
-                                    print( "##### Emit node for %\n", st.name );
+                                    <<emitted = true;
                                 }
-
-                                // Find its node
-                                node, nodeFound := table_find( *globalStructNodes, st );
-                                // TODO Do we need to delay unavailable nodes until we get a TYPECHECKED_ALL_WE_CAN msg?
-                                assert( nodeFound, "Didn't typecheck node for type '%' in time to emit it", st.name );
-
-                                str := tprint( "% :: cast(*Code_Struct) 0x%;\n", StructNodeIdentFor( st, false ), node );
-                                add_build_string( str, message.workspace ); //, code = REFLECT_MODULE_SCOPE );
-
-                                // Also add it to the list to emit them all at the end as an array
-                                array_add( *globalNodesTable, node );
                             }
                         }
                     }
@@ -176,6 +188,23 @@ MessageLoop :: ( w: Workspace )
 
                     #if EmitStructCodeNodes
                     {
+                        // Continue trying to emit any nodes we haven't yet emitted
+                        for globalReflectedTypes
+                        {
+                            // Key, value
+                            st, emitted := it_index, it;
+                            if !emitted
+                            {
+                                if TryEmitNodeFor( st, w )
+                                    table_set( *globalReflectedTypes, st, true );
+                                else if phase.num_items_waiting_to_typecheck == 0
+                                    // If we got to typecheck everything, and we still couldn't emit a node for some type, we failed
+                                    assert( false, "Didn't typecheck node for type '%' in time to emit it", st.name );
+                            }
+                        }
+
+                        // NOTE When there's nothing else to typecheck, assume we have all the nodes (and no others will be added)
+                        // and emit a table containing all of them, plus run any runners
                         if phase.num_items_waiting_to_typecheck == 0 && !globalEmittedNodesTable
                         {
                             // Emit all struct nodes as a constant array
@@ -195,7 +224,7 @@ MessageLoop :: ( w: Workspace )
                                 print_to_builder( *globalBuilder, "#run %(%);", it.name, globalRunnerArgs[it_index] );
                             }
 
-                            add_build_string( builder_to_string( *globalBuilder ), message.workspace ); //, code = REFLECT_MODULE_SCOPE );
+                            add_build_string( builder_to_string( *globalBuilder ), w ); //, code = REFLECT_MODULE_SCOPE );
                             free_buffers( *globalBuilder );
 
                             globalEmittedNodesTable = true;
