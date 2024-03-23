@@ -114,7 +114,7 @@ BinaryWriterFB :: struct
     buffer: BufferBuilder( 1 * Megabytes );
     fields: [..] FieldInfo;
     tables: [..] TableInfo;
-    vector: [..] VectorInfo;
+    vectors: [..] VectorInfo;
     strings: [..] StringInfo;
 }
 
@@ -123,7 +123,7 @@ BinaryWriterFB :: struct
 
 FieldInfo :: struct
 {
-    type: *Type_Info_Struct_Member;
+    type: *Type_Info;
     offset: voffset;        // Relative to start of its table, 0 = not present
     union
     {
@@ -138,7 +138,7 @@ TableInfo :: struct
 {
     // Position in the buffer where these were written (once we know it)
     tablePos, vtablePos: s32;
-    firstFieldIdx: s32 = -1;
+    firstFieldIdx: s32;
     fieldCount: s32;
     tableSize, vtableSize: u16;
 }
@@ -171,8 +171,8 @@ ComputeTableSize :: ( type: Type ) -> s64
     totalSize := size_of(soffset);
     for m: tis.members
     {
-        // NOTE TODO The computed sizes here heavily depend on what's implemented or not
-        // at the generic reflector level! So check GenReflectFunction often to ensure its in sync
+        // NOTE TODO The computed sizes here heavily depend on what's implemented or not at the reflector level!
+        // So check with that code often to ensure its in sync
         if m.type.type ==
         {
             case .INTEGER; #through;
@@ -244,10 +244,19 @@ Reflect :: ( d: *$T/interface struct {}, r: *BinaryWriterFB ) -> ReflectResult
     //#if info.IsPacked
         //return inline ReflectPacked( d, r );
     //else
-    //{
-        //result, _ := ReflectStruct( d, info, r );
-        //return result;
-    //}
+    {
+        dummyField: FieldInfo;
+        result := Register( d, *dummyField, r );
+        if result != .Ok
+            return result;
+
+        // TODO 
+        // - At this point we should have everything perfectly described in the Writer
+        // - Compute the total size of the buffer based on that
+        // - Think how to write it "backwards"
+
+        return result;
+    }
     return .Ok;
 }
 
@@ -267,45 +276,122 @@ Reflect :: inline ( d: *$T, r: *BinaryReflectorFB ) -> ReflectResult
     return .Ok;
 }
 
-ReflectStruct :: ( d: *$T/interface struct {}, info: StructTypeInfo, r: *BinaryReflectorFB ) -> ReflectResult, s64
+// TODO We'll need to change build.jai to be able to discover these types too?
+Register :: ( d: *$T, targetField: *FieldInfo, r: *BinaryReflectorFB ) -> ReflectResult
+#modify
 {
-    #if r.IsWriting
+    // Pretty amazing to be able to do this tbh..
+    fieldType := FieldTypeFor( cast(*Type_Info)T );
+    return fieldType == .Table;
+}
+{
+    //st := type_info(T);
+
+    //info, foundInfo := table_find( *globalStructTypeInfoTable, st );
+    //assert( foundInfo, "Couldn't find compile-time ReflectedTypeInfo for type %", st.name );
+
+    targetField.tableIndex = r.tables.count;
+    table := Push( *r.tables );
+
+    // First field in a table is the offset to its vtable
+    curOffset: voffset = size_of(voffset);
+
+    table.firstFieldIdx = cast(s32) r.fields.count;
+    // TODO We need a convention for what we're gonna put in our vtables. Review how field ids are used in the "spec"
+    // I think (!) in vtables we want to list the offset of each field for all consecutive field ids in order, or 0 if that id was deprecated
+    PushEmpty( *r.fields, table.fieldCount );
+
+    field: *FieldInfo;
+    result := ReflectResult.Ok;
+    // Explode all struct fields (that have an id) and call the appropriate typed Register on each
+    // TODO Probably a good idea to turn this into a RegisterField() macro
+    #insert -> string
     {
-        table := Push( *r.tables );
-        tableEntryIndex := table - r.tables.data;
+        st := type_info(T);
+        stNode :: #insert #run StructNodeIdentFor( type_info(T), true );
+        assert( stNode != null, "Code node for type '%' not available", st.name );
 
-        fieldCount: s32 = 0;
-        // First field in a table is the offset to its vtable
-        curOffset: voffset = size_of(voffset);
+        ok, info := GatherReflectedTypeInfo( st, stNode );
+        if !ok
+            return "return .InvalidSchema;";
 
-        st: *Type_Info_Struct = type_info(T);
+        builder: String_Builder;  
+        defer free_buffers(*builder);
+
+        tableFieldIdx := 0;
         for m, index: st.members
         {
             fieldInfo := *info.fieldInfo[index];
             if !fieldInfo.id
                 continue;
 
-            field := Push( *r.fields );
-            if table.firstFieldIdx == -1
-                table.firstFieldIdx = cast(s32)(field - r.fields.data);
-
-            field.type = *m;
-            field.offset = curOffset;
-
-            v := GetMemberValue( *m, d );
-            if FieldTypeFor( m.type ) ==
-            {
-                case .Inline;
-                    field.value = v;
-                case .Table;
-                    result, field.tableIndex = ReflectStruct( v, r );
-            }
-
-            fieldCount += 1;
+            print_to_builder( *builder, "field = *r.fields[ table.firstFieldIdx + % ];\n", tableFieldIdx );
+            print_to_builder( *builder, "field.type   = cast(*Type_Info) type_of( d.% );\n", fieldInfo.name );
+            print_to_builder( *builder, "field.offset = %;\n", m.offset_in_bytes );
+            print_to_builder( *builder, "result = Register( *d.%, field, r );\n", fieldInfo.name );
+            print_to_builder( *builder, "if result != .Ok return result;\n" );
+            tableFieldIdx += 1;
         }
+        // Count only the members that are actually going to be serialised
+        print_to_builder( *builder, "table.fieldCount = %;\n", tableFieldIdx );
+
+        return builder_to_string( *builder );
     }
 
-    return .Ok, tableEntryIndex;
+    return result;
+}
+
+Register :: ( d: *$T, targetField: *FieldInfo, r: *BinaryReflectorFB ) -> ReflectResult
+#modify
+{
+    fieldType := FieldTypeFor( cast(*Type_Info)T );
+    return fieldType == .Array;
+}
+{
+    if d.count > S32_MAX
+        return .Overflow;
+
+    targetField.vectorIndex = cast(s32) r.vectors.count;
+    vector := Push( *r.vectors );
+    vector.count = cast(s32) d.count;
+    vector.data = d;
+
+    return .Ok;
+}
+
+Register :: ( d: *$T, targetField: *FieldInfo, r: *BinaryReflectorFB ) -> ReflectResult
+#modify
+{
+    fieldType := FieldTypeFor( cast(*Type_Info)T );
+    return fieldType == .String;
+}
+{
+    targetField.stringIndex = cast(s32) r.strings.count;
+    str := Push( *r.strings );
+    str.data = <<d;
+
+    return .Ok;
+}
+
+Register :: ( d: *$T, targetField: *FieldInfo, r: *BinaryReflectorFB ) -> ReflectResult
+#modify
+{
+    fieldType := FieldTypeFor( cast(*Type_Info)T );
+    return fieldType == .Inline;
+}
+{
+    targetField.value = <<d;
+    return .Ok;
+}
+
+Register :: ( d: *$T, targetField: *FieldInfo, r: *BinaryReflectorFB ) -> ReflectResult
+#modify
+{
+    fieldType := FieldTypeFor( cast(*Type_Info)T );
+    return fieldType == .Ignored;
+}
+{
+    #assert( false, "FB reflection for type % not implemented!", type_info(T).type );
 }
 
 ReflectPacked :: inline ( d: *$T/interface struct {}, r: *BinaryReflectorFB ) -> ReflectResult
@@ -320,9 +406,10 @@ ReflectPacked :: inline ( d: *$T/interface struct {}, r: *BinaryReflectorFB ) ->
 
 #if 0
 {
-    PushField :: ( f: Any, fields: *[..] FieldInfo ) -> int
+    PushField :: ( f: Any, fields: *[..] FieldInfo, atIndex: s64 )
     {
-
+        f := *fields[atIndex];
+        //f.type = ...
     }
 
     Reflect :: ( d: *Monster, r: *BinaryWriterFB ) -> ReflectResult
@@ -335,18 +422,23 @@ ReflectPacked :: inline ( d: *$T/interface struct {}, r: *BinaryReflectorFB ) ->
         curOffset: voffset = size_of(voffset);
 
         table.fieldCount = 8;
-        table.maxId = 11; // ?
+        //table.maxId = 11; // ?
 
-        fieldIdx := PushField( d.pos, *r.fields );
-        table.firstFieldIdx = fieldIdx;
-        PushField( d.mana,      *r.fields );
-        PushField( d.hp,        *r.fields );
-        PushField( d.friendly,  *r.fields );
-        PushField( d.name,      *r.fields );
-        PushField( d.inventory, *r.fields );
-        PushField( d.color,     *r.fields );
-        PushField( d.weapons,   *r.fields );
-        PushField( d.path,      *r.fields );
+        table.firstFieldIdx = cast(s32) r.fields.count;
+        PushEmpty( *r.fields, table.fieldCount );
+        
+        i := table.firstFieldIdx;
+        PushField( d.pos,       *r.fields, i ); i += 1;
+        PushField( d.mana,      *r.fields, i ); i += 1;
+        PushField( d.hp,        *r.fields, i ); i += 1;
+        PushField( d.friendly,  *r.fields, i ); i += 1;
+        PushField( d.name,      *r.fields, i ); i += 1;
+        PushField( d.inventory, *r.fields, i ); i += 1;
+        PushField( d.color,     *r.fields, i ); i += 1;
+        PushField( d.weapons,   *r.fields, i ); i += 1;
+        PushField( d.path,      *r.fields, i ); i += 1;
+
+        return .Ok;
     }
 }
 

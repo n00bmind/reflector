@@ -17,6 +17,7 @@ ReflectResult :: enum
     Ok;
     BadData;
     Overflow;
+    InvalidSchema;
 
     SomeError;
 }
@@ -109,7 +110,7 @@ FieldFlags :: enum_flags u8
 {
     Packed;
 }
-FieldInfo :: struct
+ReflectedFieldInfo :: struct
 {
     decl: *Code_Declaration;
     //args: [..] FieldArgs;
@@ -118,27 +119,27 @@ FieldInfo :: struct
     flags: FieldFlags;
 }
 
-StructTypeInfo :: struct
+ReflectedTypeInfo :: struct
 {
     location: Source_Code_Location;
     // Contains all the struct's members, not just the annotated ones
-    fieldInfo: [] FieldInfo;
+    fieldInfo: [] ReflectedFieldInfo;
     annotatedFieldCount: s32;
     isPacked: bool;
 }
-Init :: ( using sti: *StructTypeInfo, memberCount: int )
+Init :: ( using sti: *ReflectedTypeInfo, memberCount: int )
 {
-    fieldInfo = NewArray( memberCount, FieldInfo );
+    fieldInfo = NewArray( memberCount, ReflectedFieldInfo );
 }
-Destroy :: ( using sti: *StructTypeInfo )
+Destroy :: ( using sti: *ReflectedTypeInfo )
 {
     free( fieldInfo.data );
     << sti = .{};
 }
 
-GatherTypeInfo :: ( st: *Type_Info_Struct, stNode: *Code_Struct ) -> bool, StructTypeInfo #compile_time
+GatherReflectedTypeInfo :: ( st: *Type_Info_Struct, stNode: *Code_Struct ) -> bool, ReflectedTypeInfo #compile_time
 {
-    result: StructTypeInfo;
+    result: ReflectedTypeInfo;
     Init( *result, st.members.count );
     result.location = make_location( stNode );
 
@@ -224,6 +225,8 @@ GatherTypeInfo :: ( st: *Type_Info_Struct, stNode: *Code_Struct ) -> bool, Struc
             assert( info.id == 0 );
             info.id = cast(u16)(index + 1);
         }
+        // In this case, all fields are (auto) annotated
+        result.annotatedFieldCount = cast(s32) st.members.count;
     }
 
     return true, result;
@@ -235,8 +238,8 @@ GenStaticTypeInfo :: ( stNodes: [] *Code_Struct ) #compile_time
     {
         print( "%\n", it.defined_type.name );
 
-        ok, info := GatherTypeInfo( it.defined_type, it );
-        assert( ok, "GatherTypeInfo failed for %", it.defined_type );
+        ok, info := GatherReflectedTypeInfo( it.defined_type, it );
+        assert( ok, "GatherReflectedTypeInfo failed for %", it.defined_type );
 
         table_set( *globalStructTypeInfoTable, it.defined_type, info );
     }
@@ -253,7 +256,7 @@ globalBuilder: String_Builder;
 
 // NOTE Remember! Only structs for which we're calling Reflect() will appear here!
 #placeholder globalReflectedStructNodes;
-#no_reset globalStructTypeInfoTable: Table(*Type_Info_Struct, StructTypeInfo);
+#no_reset globalStructTypeInfoTable: Table(*Type_Info_Struct, ReflectedTypeInfo);
 
 
 GenReflectFunction :: ( T: Type, st: *Type_Info_Struct, reflector: $Reflector ) -> string #expand #compile_time
@@ -266,10 +269,10 @@ GenReflectFunction :: ( T: Type, st: *Type_Info_Struct, reflector: $Reflector ) 
     stNode :: #insert #run StructNodeIdentFor( type_info(T), true );
     assert( stNode != null, "Code node for type '%' not available", st.name );
 
-    // For runtime code, we also gather all these nodes and generate the StructTypeInfo for each of them,
+    // For runtime code, we also gather all these nodes and generate the ReflectedTypeInfo for each of them,
     // and index that in globalStructTypeInfoTable. However, here at compile time, the #run directive that
     // builds that table may not have run yet, so we just go gather that info again..
-    ok, info := GatherTypeInfo( st, stNode );
+    ok, info := GatherReflectedTypeInfo( st, stNode );
     if !ok
         return "";
 
@@ -296,7 +299,7 @@ GenReflectFunction :: ( T: Type, st: *Type_Info_Struct, reflector: $Reflector ) 
                            st.name );
         }
 
-        // TODO It'd be quite powerful to dump most of the contents of the StructTypeInfo above in here
+        // TODO Perhaps by default we should embed the existing ReflectedTypeInfo inside the custom reflector's ReflectedTypeInfo?
         append( *globalBuilder, "    info: r.ReflectedTypeInfo;\n" );
         append( *globalBuilder, tprint( "    if BeginReflectType( *info, %, r )\n", st.name ) );
         append( *globalBuilder, "    {\n" );
