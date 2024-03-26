@@ -7,6 +7,11 @@
   like for example, output a 010 Editor template so that the binary data can be easily inspected & edited.
   https://www.sweetscape.com/010editor/templates.html
 
-- New "competitor" -> https://github.com/betwixt-labs/bebop
+- New "competitors":
+  https://capnproto.org/
+  https://mechanical-sympathy.blogspot.com/2014/05/simple-binary-encoding.html
+  https://github.com/betwixt-labs/bebop
+
+  https://capnproto.org/news/2014-06-17-capnproto-flatbuffers-sbe.html
 
 

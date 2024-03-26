@@ -88,9 +88,9 @@ TestBinarySerializerFB :: ()
     writer: BinaryWriterFB;
     result := Reflect( *mA, *writer );
     print( "Writer result: %\n", result );
-    print( "Wrote % bytes\n", writer.buffer.size );
+    print( "Wrote % bytes\n", writer.buffer.count );
 
-    reader: BinaryReaderFB = .{ buffer = ToArray( *writer.buffer ) };
+    reader: BinaryReaderFB = .{ buffer = writer.buffer };
     print( "Reading % bytes\n", reader.buffer.count );
     result = Reflect( *mB, *reader );
     print( "Reader result: %\n", result );

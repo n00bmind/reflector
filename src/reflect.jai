@@ -125,6 +125,7 @@ ReflectedTypeInfo :: struct
     // Contains all the struct's members, not just the annotated ones
     fieldInfo: [] ReflectedFieldInfo;
     annotatedFieldCount: s32;
+    maxId: s32;
     isPacked: bool;
 }
 Init :: ( using sti: *ReflectedTypeInfo, memberCount: int )
@@ -137,6 +138,7 @@ Destroy :: ( using sti: *ReflectedTypeInfo )
     << sti = .{};
 }
 
+// TODO Should probably cache all these calls in a hashtable
 GatherReflectedTypeInfo :: ( st: *Type_Info_Struct, stNode: *Code_Struct ) -> bool, ReflectedTypeInfo #compile_time
 {
     result: ReflectedTypeInfo;
@@ -191,6 +193,7 @@ GatherReflectedTypeInfo :: ( st: *Type_Info_Struct, stNode: *Code_Struct ) -> bo
             }
 
             info.id = cast(u16)fieldId;
+            result.maxId = Max( result.maxId, info.id );
             // TODO Parse optional name attribute etc.
 
             result.annotatedFieldCount += 1;
@@ -227,11 +230,13 @@ GatherReflectedTypeInfo :: ( st: *Type_Info_Struct, stNode: *Code_Struct ) -> bo
         }
         // In this case, all fields are (auto) annotated
         result.annotatedFieldCount = cast(s32) st.members.count;
+        result.maxId = cast(s32) st.members.count;
     }
 
     return true, result;
 }
 
+// FIXME #no_reset doesnt work at all with stuff that allocates!
 GenStaticTypeInfo :: ( stNodes: [] *Code_Struct ) #compile_time
 {
     for stNodes
