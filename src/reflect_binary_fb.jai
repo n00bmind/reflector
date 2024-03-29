@@ -117,18 +117,33 @@ BinaryWriterFB :: struct
     vectors: [..] VectorInfo;
     strings: [..] StringInfo;
     measuredBufferSize: s64;
-    scopeDepth: s64;
-    bufferHead: s32;
+    bufferHead: s64;
+    bufferOffset: s64;
 }
 
 #scope_file
 
-Write :: ( data: *void, size: s32, r: *BinaryWriterFB ) -> s32
+Rewind :: ( offset: s64, r: *BinaryWriterFB ) -> uoffset
 {
-    // Pop head back to make space then write
-    r.bufferHead -= size;
-    memcpy( *r.buffer[ r.bufferHead ], data, size );
-    return r.bufferHead;
+    assert( offset <= r.bufferHead, "Buffer underflow" );
+    r.bufferHead -= offset;
+    r.bufferOffset = 0;
+
+    return cast(uoffset) r.bufferHead;
+}
+
+Write :: ( data: *void, size: s64, r: *BinaryWriterFB )
+{
+    memcpy( *r.buffer[ r.bufferHead + r.bufferOffset ], data, size );
+    r.bufferOffset += size;
+}
+
+// Rewind head back to make space then write
+RewindAndWrite :: ( data: *void, size: s64, r: *BinaryWriterFB ) -> uoffset
+{
+    result := Rewind( size, r );
+    Write( data, size, r );
+    return result;
 }
 
 
@@ -143,31 +158,35 @@ FieldInfo :: struct
         stringIndex: s64;
     }
     size: s32;
-    offset: voffset;        // Relative to start of its table, 0 = not present
+    // Relative to start of its table, 0 = not present, unused in vectors
+    offset: voffset;
 }
 
 TableInfo :: struct
 {
-    // Position in the buffer where these were written (once we know it)
-    tablePos, vtablePos: s32;
+    // Position in the buffer where these were written
+    tablePos, vtablePos: uoffset;
     firstFieldIdx: s32;
     fieldCount: s32;
-    tableSize, vtableSize: u16;
+    maxId: u16;
+    tableSize, vtableSize: s32;
 }
 
 VectorInfo :: struct
 {
-    // Position in the buffer (once we know it)
-    pos: s32;
+    // Position in the buffer
+    pos: uoffset;
+    size: s32;
+    firstFieldIdx: s32;
     count: s32;
     data: *void;
 }
 
 StringInfo :: struct
 {
-    // Position in the buffer (once we know it)
-    pos: s32;
-    // TODO Remember to null-terminate appropriately
+    // Position in the buffer
+    pos: uoffset;
+    size: s32;
     data: string;
 }
 
@@ -219,7 +238,7 @@ FieldType :: enum
     Ignored;
     Inline;
     Table;
-    Array;
+    Vector;
     String;
 }
 FieldTypeFor :: ( t: *Type_Info ) -> FieldType
@@ -236,7 +255,7 @@ FieldTypeFor :: ( t: *Type_Info ) -> FieldType
             return .Table;
 
         case .ARRAY;
-            return .Array;
+            return .Vector;
 
         case .STRING;
             return .String;
@@ -257,42 +276,37 @@ ArrayElementTypeFor :: ( t: *Type_Info_Array ) -> Type
 // However in this case I dont think that's all that important
 Reflect :: ( d: *$T/interface struct {}, r: *BinaryWriterFB ) -> ReflectResult
 {
-    if( r.scopeDepth == 0 )
-    {
-        //#if info.IsPacked
-        //return inline ReflectPacked( d, r );
-        //else
-        {
-            // Header is 4 bytes at a minimum
-            r.measuredBufferSize = size_of(uoffset);
-
-            dummyField: FieldInfo;
-            result := Register( d, *dummyField, r );
-            if result != .Ok
-                return result;
-
-            print( "##### Measured buffer size: %\n", r.measuredBufferSize );
-            r.buffer = NewArray( r.measuredBufferSize, u8 );
-            r.bufferHead = cast(s32) r.buffer.count;
-        }
-    }
-
-    r.scopeDepth += 1;
-
     dummyField: FieldInfo;
-    result := Reflect( d, dummyField, r );
+    // Header is 4 bytes at a minimum
+    r.measuredBufferSize = size_of(uoffset);
+
+    result := Register( d, *dummyField, r );
+    if result != .Ok
+        return result;
+
+    print( "##### Measured buffer size: %\n", r.measuredBufferSize );
+    r.buffer = NewArray( r.measuredBufferSize, u8 );
+    r.bufferHead = r.buffer.count;
+
+    result = Reflect( d, dummyField, r );
     return result;
 }
 
-Reflect :: ( d: *$T, field: FieldInfo, r: *BinaryWriterFB ) -> ReflectResult
+// TODO We'll need to change build.jai to be able to discover these types too?
+Reflect :: ( d: *$T, sourceField: FieldInfo, r: *BinaryWriterFB ) -> ReflectResult
 #modify
 {
     fieldType := FieldTypeFor( cast(*Type_Info)T );
     return fieldType == .Table;
 }
 {
-    table := *r.tables[ field.tableIndex ];
+    table := *r.tables[ sourceField.tableIndex ];
 
+    // Map offsets by ordered field id (id 0 is unused)
+    tmpOffsets := [] voffset.{ table.maxId, talloc( table.maxId * size_of(voffset) ) };
+    memset( tmpOffsets.data, 0, tmpOffsets.count * size_of(voffset) );
+
+    field: *FieldInfo;
     result := ReflectResult.Ok;
     #insert -> string
     {
@@ -312,76 +326,134 @@ Reflect :: ( d: *$T, field: FieldInfo, r: *BinaryWriterFB ) -> ReflectResult
             if !fieldInfo.id
                 continue;
 
-            print_to_builder( *builder, "result = Reflect( *d.%, r.fields[ table.firstFieldIdx + % ], r );\n", fieldInfo.name, tableFieldIdx );
+            print_to_builder( *builder, "field = *r.fields[ table.firstFieldIdx + % ];\n", tableFieldIdx ); 
+            print_to_builder( *builder, "result = Reflect( *d.%, <<field, r );\n", fieldInfo.name );
             print_to_builder( *builder, "if result != .Ok return result;\n" );
+
+            print_to_builder( *builder, "tmpOffsets[ % - 1 ] = field.offset;\n", fieldInfo.id );
 
             tableFieldIdx += 1;
         }
         return builder_to_string( *builder );
     }
 
-    // TODO Write table & vtable
+    // Write vtable
+    // TODO Deduplication
+    table.vtablePos = Rewind( table.vtableSize, r );
+    // Implicit conversion to u16
+    assert( table.vtableSize < U16_MAX, "Vtable size overflow" );
+    assert( table.tableSize < U16_MAX, "Table size overflow" );
+    Write( *table.vtableSize, size_of(u16), r );
+    Write( *table.tableSize, size_of(u16), r );
+    Write( tmpOffsets.data, tmpOffsets.count * size_of(voffset), r );
 
+    // Write table contents
+    // TODO Alignments
+    table.tablePos = Rewind( table.tableSize, r );
+    relOffset: soffset = cast(soffset)(table.vtablePos - table.tablePos);
+    Write( *relOffset, size_of(soffset), r );
+
+    for idx: 0 .. table.fieldCount
+    {
+        field = *r.fields[ table.firstFieldIdx + idx ];
+        fieldType := FieldTypeFor( field.type );
+
+        if fieldType == .Inline
+            Write( field.value.value_pointer, field.size, r );
+        else if fieldType == .Table
+        {
+            pos := r.tables[ field.tableIndex ].tablePos;
+            Write( *pos, size_of(uoffset), r );
+        }
+        else if fieldType == .Vector
+        {
+            pos := r.vectors[ field.vectorIndex ].pos;
+            Write( *pos, size_of(uoffset), r );
+        }
+        else if fieldType == .String
+        {
+            pos := r.strings[ field.stringIndex ].pos;
+            Write( *pos, size_of(uoffset), r );
+        }
+    }
 
     return .Ok;
 }
 
-Reflect :: ( d: *$T, field: FieldInfo, r: *BinaryWriterFB ) -> ReflectResult
+Reflect :: ( d: *$T, sourceField: FieldInfo, r: *BinaryWriterFB ) -> ReflectResult
 #modify
 {
     fieldType := FieldTypeFor( cast(*Type_Info)T );
-    return fieldType == .Array;
+    return fieldType == .Vector;
 }
 {
-    ArrayType :: #run ArrayElementTypeFor( type_info(T) );
-    vec := *r.vectors[ field.vectorIndex ];
+    ItType :: #run ArrayElementTypeFor( type_info(T) );
+    vec := *r.vectors[ sourceField.vectorIndex ];
 
-    // Recover typed array
-    array := [] ArrayType.{ vec.count, vec.data };
-    for array
+    for * <<d
     {
-        // FIXME We need to do this assignment of fields to each slot in the Register function
         // TODO Any tables written here will each write out a copy of the same individual vtable
         // Obvious chance for deduplication here..
-        result := Reflect( *it, r.fields[ vec.firstFieldIndex + it_index ], r );
+        result := Reflect( it, r.fields[ vec.firstFieldIdx + it_index ], r );
         if result != .Ok
             return result;
     }
 
-    // TODO Write actual array to the buffer
+    // Write array count & contents to the buffer
+    vec.pos = Rewind( vec.size, r );
+    Write( *vec.count, size_of(u32), r );
+
+    ItFieldType := FieldTypeFor( type_info(ItType) );
+    if ItFieldType == .Inline
+        Write( vec.data, vec.count * size_of(ItType), r );
+    else
+    {
+        for idx: 0 .. vec.count - 1
+        {
+            pos: uoffset;
+            itField := *r.fields[ vec.firstFieldIdx + idx ];
+            if ItFieldType == .String
+                pos = r.strings[ itField.stringIndex ].pos;
+            else if ItFieldType == .Table
+                pos = r.tables[ itField.tableIndex ].tablePos;
+
+            Write( *pos, size_of(uoffset), r );
+        }
+    }
 
     return .Ok;
 }
 
-Reflect :: ( d: *$T, field: FieldInfo, r: *BinaryWriterFB ) -> ReflectResult
+Reflect :: ( d: *$T, sourceField: FieldInfo, r: *BinaryWriterFB ) -> ReflectResult
 #modify
 {
     fieldType := FieldTypeFor( cast(*Type_Info)T );
     return fieldType == .String;
 }
 {
-    str := *r.strings[ field.stringIndex ];
+    str := *r.strings[ sourceField.stringIndex ];
 
-    tmpBuffer: *u8 = talloc( str.data.count + 1 );
-    memcpy( tmpBuffer, str.data.data, str.data.count );
-    tmpBuffer[str.data.count] = 0;
+    str.pos = Rewind( str.size, r );
+    // Implicitly convert to u32
+    Write( *str.data.count, size_of(u32), r );
+    Write( str.data.data, str.data.count, r );
+    zero: u8 = 0;
+    Write( *zero, size_of(u8), r );
 
-    str.pos = Write( tmpBuffer, cast(s32) str.data.count + 1, r );
     return .Ok;
 }
 
-Reflect :: ( d: *$T, field: FieldInfo, r: *BinaryWriterFB ) -> ReflectResult
+Reflect :: ( d: *$T, sourceField: FieldInfo, r: *BinaryWriterFB ) -> ReflectResult
 #modify
 {
     fieldType := FieldTypeFor( cast(*Type_Info)T );
     return fieldType == .Inline;
 }
 {
-    // No-op. The table writes all its fields already
+    // No-op. The table writes all its inline fields already
     return .Ok;
 }
 
-// TODO We'll need to change build.jai to be able to discover these types too?
 Register :: ( d: *$T, targetField: *FieldInfo, r: *BinaryWriterFB ) -> ReflectResult
 #modify
 {
@@ -415,6 +487,7 @@ Register :: ( d: *$T, targetField: *FieldInfo, r: *BinaryWriterFB ) -> ReflectRe
         builder: String_Builder;  
         defer free_buffers(*builder);
 
+        print_to_builder( *builder, "table.maxId = /*info.maxId*/ %;\n", info.maxId );
         // Count only the members that are actually going to be serialised
         print_to_builder( *builder, "table.fieldCount = /*info.annotatedFieldCount*/ %;\n", info.annotatedFieldCount );
         // Fields in a table are consecutive inside r.fields, in memory order
@@ -422,11 +495,11 @@ Register :: ( d: *$T, targetField: *FieldInfo, r: *BinaryWriterFB ) -> ReflectRe
         print_to_builder( *builder, "PushEmpty( *r.fields, table.fieldCount );\n\n" );
 
         // Vtable: 2 u16 sizes + 1 voffset per used up field id (id 0 is unused)
-        print_to_builder( *builder, "r.measuredBufferSize += 2 * size_of(u16);\n" );
-        print_to_builder( *builder, "r.measuredBufferSize += /*info.maxId*/ % * size_of(voffset);\n", info.maxId );
+        print_to_builder( *builder, "table.vtableSize = 2 * size_of(u16);\n" );
+        print_to_builder( *builder, "table.vtableSize += table.maxId * size_of(voffset);\n" );
         // Table: soffset to vtable + <variable> per serialised field
         // FIXME Alignment etc
-        print_to_builder( *builder, "r.measuredBufferSize += size_of(soffset);\n\n" );
+        print_to_builder( *builder, "table.tableSize = size_of(soffset);\n\n" );
 
         tableFieldIdx := 0;
         for m, index: st.members
@@ -442,11 +515,15 @@ Register :: ( d: *$T, targetField: *FieldInfo, r: *BinaryWriterFB ) -> ReflectRe
             print_to_builder( *builder, "if result != .Ok return result;\n" );
 
             print_to_builder( *builder, "curOffset += field.size;\n" );
+            print_to_builder( *builder, "table.tableSize += field.size;\n" );
             tableFieldIdx += 1;
         }
 
         return builder_to_string( *builder );
     }
+
+    r.measuredBufferSize += table.vtableSize;
+    r.measuredBufferSize += table.tableSize;
 
     return result;
 }
@@ -455,7 +532,7 @@ Register :: ( d: *$T, targetField: *FieldInfo, r: *BinaryWriterFB ) -> ReflectRe
 #modify
 {
     fieldType := FieldTypeFor( cast(*Type_Info)T );
-    return fieldType == .Array;
+    return fieldType == .Vector;
 }
 {
     if d.count > S32_MAX
@@ -464,14 +541,32 @@ Register :: ( d: *$T, targetField: *FieldInfo, r: *BinaryWriterFB ) -> ReflectRe
     targetField.size = size_of(uoffset);
     targetField.vectorIndex = cast(s32) r.vectors.count;
 
-    vector := Push( *r.vectors );
-    vector.count = cast(s32) d.count;
-    vector.data = d.data;
+    vec := Push( *r.vectors );
+    vec.count = cast(s32) d.count;
+    vec.data = d.data;
 
-    // FIXME Vector of structs & tables & strings!
-    r.measuredBufferSize += targetField.size;
-    // Add length of array contents
-    r.measuredBufferSize += size_of(u32) + vector.count * size_of(T);
+    ItType :: #run ArrayElementTypeFor( type_info(T) );
+    if FieldTypeFor( type_info(ItType) ) == .Vector
+        return .InvalidSchema;
+
+    vec.firstFieldIdx = cast(s32) r.fields.count;
+    PushEmpty( *r.fields, vec.count );
+
+    vec.size = size_of(u32);
+    for * <<d
+    {
+        itField := *r.fields[ vec.firstFieldIdx + it_index ];
+        itField.type = type_info(ItType);
+
+        result := Register( it, itField, r );
+        if result != .Ok
+            return result;
+
+        vec.size += itField.size;
+    }
+
+    r.measuredBufferSize += vec.size;
+
     return .Ok;
 }
 
@@ -487,10 +582,10 @@ Register :: ( d: *$T, targetField: *FieldInfo, r: *BinaryWriterFB ) -> ReflectRe
 
     str := Push( *r.strings );
     str.data = <<d;
+    str.size = cast(s32)(size_of(u32) + d.count + 1);
 
-    r.measuredBufferSize += targetField.size;
     // Add length of string contents
-    r.measuredBufferSize += size_of(u32) + d.count + 1;
+    r.measuredBufferSize += str.size;
     return .Ok;
 }
 
@@ -503,8 +598,6 @@ Register :: ( d: *$T, targetField: *FieldInfo, r: *BinaryWriterFB ) -> ReflectRe
 {
     targetField.size = size_of(T);
     targetField.value = <<d;
-
-    r.measuredBufferSize += targetField.size;
     return .Ok;
 }
 

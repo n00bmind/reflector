@@ -125,7 +125,7 @@ ReflectedTypeInfo :: struct
     // Contains all the struct's members, not just the annotated ones
     fieldInfo: [] ReflectedFieldInfo;
     annotatedFieldCount: s32;
-    maxId: s32;
+    maxId: u16;
     isPacked: bool;
 }
 Init :: ( using sti: *ReflectedTypeInfo, memberCount: int )
@@ -230,7 +230,7 @@ GatherReflectedTypeInfo :: ( st: *Type_Info_Struct, stNode: *Code_Struct ) -> bo
         }
         // In this case, all fields are (auto) annotated
         result.annotatedFieldCount = cast(s32) st.members.count;
-        result.maxId = cast(s32) st.members.count;
+        result.maxId = cast(u16) st.members.count;
     }
 
     return true, result;
