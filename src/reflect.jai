@@ -114,8 +114,9 @@ ReflectedFieldInfo :: struct
 {
     decl: *Code_Declaration;
     //args: [..] FieldArgs;
-    id: u16;
     name: string;
+    offset: s32;
+    id: u16;
     flags: FieldFlags;
 }
 
@@ -136,6 +137,19 @@ Destroy :: ( using sti: *ReflectedTypeInfo )
 {
     free( fieldInfo.data );
     << sti = .{};
+}
+
+FindFieldInfo :: ( id: u16, typeInfo: ReflectedTypeInfo ) -> *ReflectedFieldInfo
+{
+    if id > typeInfo.maxId
+        return null;
+
+    for * typeInfo.fieldInfo
+    {
+        if it.id == id
+            return it;
+    }
+    return null;
 }
 
 // TODO Should probably cache all these calls in a hashtable
@@ -227,6 +241,7 @@ GatherReflectedTypeInfo :: ( st: *Type_Info_Struct, stNode: *Code_Struct ) -> bo
 
             assert( info.id == 0 );
             info.id = cast(u16)(index + 1);
+            info.offset = cast(s32)m.offset_in_bytes;
         }
         // In this case, all fields are (auto) annotated
         result.annotatedFieldCount = cast(s32) st.members.count;

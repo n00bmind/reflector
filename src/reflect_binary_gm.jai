@@ -311,6 +311,8 @@ Reflect :: inline ( d: *$T, r: *BinaryReflectorGM ) -> ReflectResult
 
         #if r.IsReading
         {
+            // TODO Why is this triggering?
+            //assert( d.data == null );
             // TODO We probably want to be much more explicit with our allocators..
             <<d = alloc_string( d.count );
         }
