@@ -69,7 +69,7 @@ VTable :: struct
     fields: *voffset;
 }
 
-GetField :: ( fieldId: int, vt: *VTable ) -> bool, voffset
+GetFieldOffset :: ( fieldId: int, vt: *VTable ) -> bool, voffset
 {
     offsetBytes := (fieldId + 2) * size_of(voffset);
     if offsetBytes < vt.size
@@ -433,208 +433,219 @@ Reflect :: ( d: *$T, sourceField: FieldInfo, r: *BinaryReflectorFB ) -> ReflectR
     }
     else #if r.IsReading
     {
-        st := type_info(T);
-        stNode :: #insert #run StructNodeIdentFor( type_info(T), true );
-
-        // FIXME This won't work outside compile time!
-        ok, info := GatherReflectedTypeInfo( st, stNode );
-        if !ok
-            return .InvalidSchema;
-
         tablePos := r.bufferHead;
 
         // Find vtable
         vTableOffset: soffset;
-        Read( r, *vTableOffset );
+        ReadAndAdvance( r, *vTableOffset );
 
-        id: u16 = 0;
-        vtable: *VTable = cast(*VTable) *r.buffer[ r.bufferHead + vTableOffset ];
-        while( true )
+        vtable: *VTable = cast(*VTable) *r.buffer[ tablePos + vTableOffset ];
+
+        f: FieldInfo;
+        inBounds: bool;
+        fieldOffset: voffset;
+        result := ReflectResult.Ok;
+        #insert -> string
         {
-            inBounds, fieldOffset := GetField( id, vtable );
-            if !inBounds
-                break;
+            // Call typed Reflect on each serialised field
+            st := type_info(T);
+            stNode :: #insert #run StructNodeIdentFor( type_info(T), true );
 
-            if fieldOffset
+            ok, info := GatherReflectedTypeInfo( st, stNode );
+            if !ok
+                return "return .InvalidSchema;";
+
+            builder: String_Builder;  
+            defer free_buffers(*builder);
+
+            tableFieldIdx := 0;
+            for m, index: st.members
             {
-                fieldInfo := FindFieldInfo( id + 1, info );
-                if fieldInfo
-                {
-                    r.bufferHead = tablePos + fieldOffset;
+                fieldInfo := *info.fieldInfo[index];
+                if !fieldInfo.id
+                    continue;
 
-                    targetType := fieldInfo.decl.type_inst.result;
-                    target: [] u8 = .{ targetType.runtime_size, cast(*u8)d + fieldInfo.offset };
-
-                    result := Reflect( targetType, target, r );
-                    if result != .Ok
-                        return result;
-                }
-            }
+                print_to_builder( *builder, "inBounds, fieldOffset = GetFieldOffset( %, vtable );\n", fieldInfo.id );
+                print_to_builder( *builder, "if inBounds {\n" );
+                print_to_builder( *builder, "    r.bufferHead = tablePos + fieldOffset;\n" );
+                print_to_builder( *builder, "    result = Reflect( *d.%, f, r );\n", fieldInfo.name );
+                print_to_builder( *builder, "    if result != .Ok return result;\n" );
+                print_to_builder( *builder, "}\n" );
+            }   
+            return builder_to_string( *builder );
         }
     }
 
     return .Ok;
 }
 
-Reflect :: ( targetType: *Type_Info, target: [] u8, r: *BinaryReaderFB ) -> ReflectResult
-{
-    fieldType := FieldTypeFor( targetType );
-    if fieldType ==
-    {
-        case .Inline;
-        {
-            Read( r, target );
-        }
-        case .String;
-        {
-            offset: uoffset;
-            Read( r, *offset );
-
-            count: u32;
-            Read( r, r.bufferHead + offset, *count );
-
-            targetStr := cast(*string) target.data;
-            assert( targetStr.data == null );
-
-            <<targetStr = alloc_string( count );
-            Read( r, r.bufferHead + offset + 4, cast([] u8) <<targetStr );
-        }
-        case .Vector;
-        {
-            offset: uoffset;
-            Read( r, *offset );
-
-            count: u32;
-            Read( r, r.bufferHead + offset, *count );
-
-            tia := cast(*Type_Info_Array) fieldType;
-            itType := tia.element_type;
-            itFieldType := FieldTypeFor( itType );
-
-            if tia.array_type == .FIXED
-            {
-                // TODO Do we want to be more fault tolerant here?
-                if count != tia.array_count
-                    return .BadData;
-
-                d := cast(*[] u8) target.data;
-                if itFieldType == .Inline
-                {
-                    bytes: [] u8 = .{ count * itType.runtime_size, d.data };
-                    // Just read the raw bytes of the array elements
-                    Read( r, r.bufferHead + offset + 4, bytes );
-                }
-                else
-                {
-                    dataStart := r.bufferHead + offset + 4;
-                    for 0 .. count - 1
-                    {
-                        bufferPos := dataStart + it * size_of(uoffset);
-                        Read( r, bufferPos, *offset );
-
-                        r.bufferHead = bufferPos + offset;
-                        dItem := [] u8.{ itType.runtime_size, d.data + it * itType.runtime_size };
-
-                        Reflect( itType, dItem, r );
-                    }
-                }
-            }
-            else
-            {
-                // TODO We'd have to manually allocate these since we can't cast them to their actual type
-                //Reset( d, count, false );
-            }
-
-        }
-        case .Table;
-        {
-            //st := cast(*Type_Info_Struct) targetType;
-            //// FIXME Need the static type!
-            //stNode :: #insert #run StructNodeIdentFor( targetType, true );
-
-            //ok, info := GatherReflectedTypeInfo( st, stNode );
-            //if !ok
-                //return .InvalidSchema;
-
-        }
-    }
-
-    return .Ok;
-}
-
-Reflect :: ( d: *$T, sourceField: FieldInfo, r: *BinaryWriterFB ) -> ReflectResult
+Reflect :: ( d: *$T, sourceField: FieldInfo, r: *BinaryReflectorFB ) -> ReflectResult
 #modify
 {
     fieldType := FieldTypeFor( cast(*Type_Info)T );
     return fieldType == .Vector;
 }
 {
-    ItType :: #run ArrayElementTypeFor( type_info(T) );
-    vec := *r.vectors[ sourceField.vectorIndex ];
-
-    for * <<d
+    #if r.IsWriting
     {
-        // TODO Any tables written here will each write out a copy of the same individual vtable
-        // Obvious chance for deduplication here..
-        result := Reflect( it, r.fields[ vec.firstFieldIdx + it_index ], r );
-        if result != .Ok
-            return result;
-    }
+        ItType :: #run ArrayElementTypeFor( type_info(T) );
+        vec := *r.vectors[ sourceField.vectorIndex ];
 
-    // Write array count & contents to the buffer
-    vec.pos = Rewind( vec.size, r );
-    Write( *vec.count, size_of(u32), r );
-
-    ItFieldType := FieldTypeFor( type_info(ItType) );
-    if ItFieldType == .Inline
-        Write( vec.data, vec.count * size_of(ItType), r );
-    else
-    {
-        for idx: 0 .. vec.count - 1
+        for * <<d
         {
-            pos: uoffset;
-            itField := *r.fields[ vec.firstFieldIdx + idx ];
-            if ItFieldType == .String
-                pos = r.strings[ itField.stringIndex ].pos;
-            else if ItFieldType == .Table
-                pos = r.tables[ itField.tableIndex ].tablePos;
+            // TODO Any tables written here will each write out a copy of the same individual vtable
+            // Obvious chance for deduplication here..
+            result := Reflect( it, r.fields[ vec.firstFieldIdx + it_index ], r );
+            if result != .Ok
+                return result;
+        }
 
-            Write( *pos, size_of(uoffset), r );
+        // Write array count & contents to the buffer
+        vec.pos = Rewind( vec.size, r );
+        Write( *vec.count, size_of(u32), r );
+
+        ItFieldType := FieldTypeFor( type_info(ItType) );
+        if ItFieldType == .Inline
+            Write( vec.data, vec.count * size_of(ItType), r );
+        else
+        {
+            for idx: 0 .. vec.count - 1
+            {
+                pos: uoffset;
+                itField := *r.fields[ vec.firstFieldIdx + idx ];
+                if ItFieldType == .String
+                    pos = r.strings[ itField.stringIndex ].pos;
+                else if ItFieldType == .Table
+                    pos = r.tables[ itField.tableIndex ].tablePos;
+
+                Write( *pos, size_of(uoffset), r );
+            }
+        }
+    }
+    else #if r.IsReading
+    {
+        // Find offset to the vector start
+        offset: uoffset;
+        Read( r, *offset );
+
+        // Save position in the buffer where the next field will need to be read
+        nextBufferHead := r.bufferHead + size_of(uoffset);
+        defer r.bufferHead = nextBufferHead;
+
+        // Skip to vector start
+        r.bufferHead += offset;
+
+        count: u32;
+        ReadAndAdvance( r, *count );
+
+        // What type of array are we trying to read into
+        tia := cast(*Type_Info_Array) type_info(T);
+        itType := tia.element_type;
+        itFieldType := FieldTypeFor( itType );
+
+        if tia.array_type == .FIXED
+        {
+            // TODO Do we want to be more fault tolerant here?
+            if count != tia.array_count
+                return .BadData;
+        }
+        else
+        {
+            // TODO Provide a mode in which all indirect data points to the source read buffer and we never allocate
+            Reset( d, count, false );
+        }
+
+        if itFieldType == .Inline
+        {
+            // Just read the raw bytes of the array elements
+            bytes: [] u8 = .{ count * itType.runtime_size, xx d.data };
+            Read( r, bytes );
+        }
+        else
+        {
+            for * <<d
+            {
+                result := Reflect( it, .{}, r );
+                if result != .Ok
+                    return result;
+            }
         }
     }
 
     return .Ok;
 }
 
-Reflect :: ( d: *$T, sourceField: FieldInfo, r: *BinaryWriterFB ) -> ReflectResult
+Reflect :: ( d: *$T, sourceField: FieldInfo, r: *BinaryReflectorFB ) -> ReflectResult
 #modify
 {
     fieldType := FieldTypeFor( cast(*Type_Info)T );
     return fieldType == .String;
 }
 {
-    str := *r.strings[ sourceField.stringIndex ];
+    #if r.IsWriting
+    {
+        str := *r.strings[ sourceField.stringIndex ];
 
-    str.pos = Rewind( str.size, r );
-    // Implicitly convert to u32
-    Write( *str.data.count, size_of(u32), r );
-    Write( str.data.data, str.data.count, r );
-    zero: u8 = 0;
-    Write( *zero, size_of(u8), r );
+        str.pos = Rewind( str.size, r );
+        // Implicitly convert to u32
+        Write( *str.data.count, size_of(u32), r );
+        Write( str.data.data, str.data.count, r );
+        zero: u8 = 0;
+        Write( *zero, size_of(u8), r );
+    }
+    else
+    {
+        // Find offset to the string start
+        offset: uoffset;
+        Read( r, *offset );
+
+        // Save position in the buffer where the next field will need to be read
+        nextBufferHead := r.bufferHead + size_of(uoffset);
+        defer r.bufferHead = nextBufferHead;
+
+        // Skip to string start
+        r.bufferHead += offset;
+
+        count: u32;
+        ReadAndAdvance( r, *count );
+
+        // TODO Provide a mode in which all indirect data points to the source read buffer and we never allocate
+        <<d = alloc_string( count );
+        Read( r, cast([] u8) <<d );
+    }
 
     return .Ok;
 }
 
-Reflect :: ( d: *$T, sourceField: FieldInfo, r: *BinaryWriterFB ) -> ReflectResult
+Reflect :: ( d: *$T, sourceField: FieldInfo, r: *BinaryReflectorFB ) -> ReflectResult
 #modify
 {
     fieldType := FieldTypeFor( cast(*Type_Info)T );
     return fieldType == .Inline;
 }
 {
-    // No-op. The table writes all its inline fields already
+    #if r.IsWriting
+    {
+        // No-op. The table writes all its inline fields already
+    }
+    else
+    {
+        ReadAndAdvance( r, d );
+    }
+
     return .Ok;
 }
+
+Reflect :: ( d: *$T, targetField: *FieldInfo, r: *BinaryReflectorFB ) -> ReflectResult
+#modify
+{
+    fieldType := FieldTypeFor( cast(*Type_Info)T );
+    return fieldType == .Ignored;
+}
+{
+    #assert( false, "FB reflection for type % not implemented!", type_info(T).type );
+}
+
 
 Register :: ( d: *$T, targetField: *FieldInfo, r: *BinaryWriterFB ) -> ReflectResult
 #modify
