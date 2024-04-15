@@ -56,6 +56,7 @@ TestBinarySerializerGM :: ()
     print( "___Binary:\n" );
 
     mA, mB: Monster;
+    mA.pos = .{ 1.0, 2.0, 3.0 };
     array_add( *mA.inventory, 10 );
     array_add( *mA.inventory, 20 );
     array_add( *mA.inventory, 30 );
@@ -80,6 +81,7 @@ TestBinarySerializerFB :: ()
     print( "___Flatbuffers:\n" );
 
     mA, mB: Monster;
+    mA.pos = .{ 1.0, 2.0, 3.0 };
     array_add( *mA.inventory, 10 );
     array_add( *mA.inventory, 20 );
     array_add( *mA.inventory, 30 );

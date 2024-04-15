@@ -59,21 +59,22 @@ Header :: struct
     id: identifier;
 }
 
-// These should be hashed & deduplicated during writing
+// TODO These should be hashed & deduplicated during writing
 VTable :: struct
 {
     size: u16;
     tableSize: u16;
     // A list of offsets to the source table, sorted by field id, starting at 0
-    // Any number of fields starting at this offset, 2 bytes per entry, according to 'size'
-    fields: *voffset;
+    firstField: voffset;
 }
 
 GetFieldOffset :: ( fieldId: int, vt: *VTable ) -> bool, voffset
 {
-    offsetBytes := (fieldId + 2) * size_of(voffset);
+    field := *vt.firstField + fieldId - 1;
+    offsetBytes := cast(*u8)field - cast(*u8)vt;
+
     if offsetBytes < vt.size
-        return true, <<((cast(*voffset)vt) + fieldId + 2);
+        return true, <<field;
     else
         return false, 0;
 }
@@ -160,8 +161,10 @@ Read :: inline ( using r: *BinaryReaderFB, offset: s64, d: *$T )
     Copy( buffer.data + offset, d, bytesToCopy );
 }
 
-ReadAndAdvance :: inline ( using r: *BinaryReaderFB, d: *$T )
+ReadAndAdvance :: ( using r: *BinaryReaderFB, d: *$T )
 {
+    print( "T is %, size_of(T) is %\n", T, size_of(T) );
+    print( "type_of(<<d) is %, size_of(type_of(<<d)) is %\n", type_of(<<d), size_of(type_of(<<d)) );
     bytesToCopy := min( size_of(T), buffer.count - bufferHead );
     Copy( buffer.data + bufferHead, d, bytesToCopy );
     bufferHead += bytesToCopy;
@@ -333,12 +336,9 @@ Reflect :: ( d: *$T/interface struct {}, r: *BinaryWriterFB ) -> ReflectResult
 }
 Reflect :: ( d: *$T/interface struct {}, r: *BinaryReaderFB ) -> ReflectResult
 {
-    rootTableOffset: uoffset;
-    Read( r, *rootTableOffset );
-
-    f: FieldInfo;
-    r.bufferHead = rootTableOffset;
-    result := Reflect( d, f, r );
+    // NOTE Assume all buffers contain a root table
+    r.bufferHead = 0;
+    result := Reflect( d, .{}, r );
 
     return result;
 }
@@ -433,11 +433,21 @@ Reflect :: ( d: *$T, sourceField: FieldInfo, r: *BinaryReflectorFB ) -> ReflectR
     }
     else #if r.IsReading
     {
+        // Find offset to the table start
+        offset: uoffset;
+        Read( r, *offset );
+
+        // Save position in the buffer where the next field will need to be read
+        nextBufferHead := r.bufferHead + size_of(uoffset);
+        defer r.bufferHead = nextBufferHead;
+
+        // Skip to table start
+        r.bufferHead = offset;
         tablePos := r.bufferHead;
 
         // Find vtable
         vTableOffset: soffset;
-        ReadAndAdvance( r, *vTableOffset );
+        Read( r, *vTableOffset );
 
         vtable: *VTable = cast(*VTable) *r.buffer[ tablePos + vTableOffset ];
 
