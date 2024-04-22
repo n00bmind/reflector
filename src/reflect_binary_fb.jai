@@ -124,6 +124,14 @@ BinaryWriterFB :: struct
 
 #scope_file
 
+GetRelativePos :: ( pos: s64, r: *BinaryWriterFB ) -> uoffset
+{
+    curPos := r.bufferHead + r.bufferOffset;
+    result := pos - curPos;
+    assert( result > 0 );
+    return cast(uoffset) result;
+}
+
 Rewind :: ( offset: s64, r: *BinaryWriterFB ) -> uoffset
 {
     assert( offset <= r.bufferHead, "Buffer underflow" );
@@ -149,25 +157,20 @@ RewindAndWrite :: ( data: *void, size: s64, r: *BinaryWriterFB ) -> uoffset
 
 // Always ensure we're not trying to read past the end of the buffer
 // If you call this with an exhausted buffer, no copy will occur
-Read :: inline ( using r: *BinaryReaderFB, d: *$T )
+// TODO There's a compiler bug affecting these atm
+#if 0
 {
-    bytesToCopy := min( size_of(T), buffer.count - bufferHead );
-    Copy( buffer.data + bufferHead, d, bytesToCopy );
-}
+    Read :: inline ( using r: *BinaryReaderFB, d: *$T )
+    {
+        bytesToCopy := min( size_of(T), buffer.count - bufferHead );
+        Copy( buffer.data + bufferHead, d, bytesToCopy );
+    }
 
-Read :: inline ( using r: *BinaryReaderFB, offset: s64, d: *$T )
-{
-    bytesToCopy := min( size_of(T), buffer.count - offset );
-    Copy( buffer.data + offset, d, bytesToCopy );
-}
-
-ReadAndAdvance :: ( using r: *BinaryReaderFB, d: *$T )
-{
-    print( "T is %, size_of(T) is %\n", T, size_of(T) );
-    print( "type_of(<<d) is %, size_of(type_of(<<d)) is %\n", type_of(<<d), size_of(type_of(<<d)) );
-    bytesToCopy := min( size_of(T), buffer.count - bufferHead );
-    Copy( buffer.data + bufferHead, d, bytesToCopy );
-    bufferHead += bytesToCopy;
+    Read :: inline ( using r: *BinaryReaderFB, offset: s64, d: *$T )
+    {
+        bytesToCopy := min( size_of(T), buffer.count - offset );
+        Copy( buffer.data + offset, d, bytesToCopy );
+    }
 }
 
 Read :: inline ( using r: *BinaryReaderFB, d: [] u8 )
@@ -180,6 +183,13 @@ Read :: inline ( using r: *BinaryReaderFB, offset: s64, d: [] u8 )
 {
     bytesToCopy := min( d.count, buffer.count - offset );
     Copy( buffer.data + offset, d.data, bytesToCopy );
+}
+
+ReadAndAdvance :: inline ( using r: *BinaryReflectorFB, d: [] u8 )
+{
+    bytesToCopy := min( d.count, buffer.count - bufferHead );
+    Copy( buffer.data + bufferHead, d.data, bytesToCopy );
+    bufferHead += bytesToCopy;
 }
 
 
@@ -316,7 +326,7 @@ Reflect :: ( d: *$T/interface struct {}, r: *BinaryWriterFB ) -> ReflectResult
     // Header is 4 bytes at a minimum
     r.measuredBufferSize = size_of(uoffset);
 
-    result := Register( d, *rootField, r );
+    result := RegisterField( d, *rootField, r );
     if result != .Ok
         return result;
 
@@ -324,7 +334,7 @@ Reflect :: ( d: *$T/interface struct {}, r: *BinaryWriterFB ) -> ReflectResult
     r.buffer = NewArray( r.measuredBufferSize, u8 );
     r.bufferHead = r.buffer.count;
 
-    result = Reflect( d, rootField, r );
+    result = ReflectField( d, rootField, r );
 
     // Write header pointing to root table
     rootTable := *r.tables[ rootField.tableIndex ];
@@ -338,14 +348,14 @@ Reflect :: ( d: *$T/interface struct {}, r: *BinaryReaderFB ) -> ReflectResult
 {
     // NOTE Assume all buffers contain a root table
     r.bufferHead = 0;
-    result := Reflect( d, .{}, r );
+    result := ReflectField( d, .{}, r );
 
     return result;
 }
 
 
 // TODO We'll need to change build.jai to be able to discover these types too?
-Reflect :: ( d: *$T, sourceField: FieldInfo, r: *BinaryReflectorFB ) -> ReflectResult
+ReflectField :: ( d: *$T, sourceField: FieldInfo, r: *BinaryReflectorFB ) -> ReflectResult
 #modify
 {
     fieldType := FieldTypeFor( cast(*Type_Info)T );
@@ -381,7 +391,7 @@ Reflect :: ( d: *$T, sourceField: FieldInfo, r: *BinaryReflectorFB ) -> ReflectR
                     continue;
 
                 print_to_builder( *builder, "field = *r.fields[ table.firstFieldIdx + % ];\n", tableFieldIdx ); 
-                print_to_builder( *builder, "result = Reflect( *d.%, <<field, r );\n", fieldInfo.name );
+                print_to_builder( *builder, "result = ReflectField( *d.%, <<field, r );\n", fieldInfo.name );
                 print_to_builder( *builder, "if result != .Ok return result;\n" );
 
                 print_to_builder( *builder, "tmpOffsets[ % - 1 ] = field.offset;\n", fieldInfo.id );
@@ -416,17 +426,17 @@ Reflect :: ( d: *$T, sourceField: FieldInfo, r: *BinaryReflectorFB ) -> ReflectR
                 Write( field.value.value_pointer, field.size, r );
             else if fieldType == .Table
             {
-                pos := r.tables[ field.tableIndex ].tablePos;
+                pos := GetRelativePos( r.tables[ field.tableIndex ].tablePos, r );
                 Write( *pos, size_of(uoffset), r );
             }
             else if fieldType == .Vector
             {
-                pos := r.vectors[ field.vectorIndex ].pos;
+                pos := GetRelativePos( r.vectors[ field.vectorIndex ].pos, r );
                 Write( *pos, size_of(uoffset), r );
             }
             else if fieldType == .String
             {
-                pos := r.strings[ field.stringIndex ].pos;
+                pos := GetRelativePos( r.strings[ field.stringIndex ].pos, r );
                 Write( *pos, size_of(uoffset), r );
             }
         }
@@ -435,19 +445,19 @@ Reflect :: ( d: *$T, sourceField: FieldInfo, r: *BinaryReflectorFB ) -> ReflectR
     {
         // Find offset to the table start
         offset: uoffset;
-        Read( r, *offset );
+        Read( r, bytes_of( *offset ) );
 
         // Save position in the buffer where the next field will need to be read
         nextBufferHead := r.bufferHead + size_of(uoffset);
         defer r.bufferHead = nextBufferHead;
 
         // Skip to table start
-        r.bufferHead = offset;
+        r.bufferHead += offset;
         tablePos := r.bufferHead;
 
         // Find vtable
         vTableOffset: soffset;
-        Read( r, *vTableOffset );
+        Read( r, bytes_of( *vTableOffset ) );
 
         vtable: *VTable = cast(*VTable) *r.buffer[ tablePos + vTableOffset ];
 
@@ -478,7 +488,7 @@ Reflect :: ( d: *$T, sourceField: FieldInfo, r: *BinaryReflectorFB ) -> ReflectR
                 print_to_builder( *builder, "inBounds, fieldOffset = GetFieldOffset( %, vtable );\n", fieldInfo.id );
                 print_to_builder( *builder, "if inBounds {\n" );
                 print_to_builder( *builder, "    r.bufferHead = tablePos + fieldOffset;\n" );
-                print_to_builder( *builder, "    result = Reflect( *d.%, f, r );\n", fieldInfo.name );
+                print_to_builder( *builder, "    result = ReflectField( *d.%, f, r );\n", fieldInfo.name );
                 print_to_builder( *builder, "    if result != .Ok return result;\n" );
                 print_to_builder( *builder, "}\n" );
             }   
@@ -489,7 +499,7 @@ Reflect :: ( d: *$T, sourceField: FieldInfo, r: *BinaryReflectorFB ) -> ReflectR
     return .Ok;
 }
 
-Reflect :: ( d: *$T, sourceField: FieldInfo, r: *BinaryReflectorFB ) -> ReflectResult
+ReflectField :: ( d: *$T, sourceField: FieldInfo, r: *BinaryReflectorFB ) -> ReflectResult
 #modify
 {
     fieldType := FieldTypeFor( cast(*Type_Info)T );
@@ -505,7 +515,7 @@ Reflect :: ( d: *$T, sourceField: FieldInfo, r: *BinaryReflectorFB ) -> ReflectR
         {
             // TODO Any tables written here will each write out a copy of the same individual vtable
             // Obvious chance for deduplication here..
-            result := Reflect( it, r.fields[ vec.firstFieldIdx + it_index ], r );
+            result := ReflectField( it, r.fields[ vec.firstFieldIdx + it_index ], r );
             if result != .Ok
                 return result;
         }
@@ -524,9 +534,9 @@ Reflect :: ( d: *$T, sourceField: FieldInfo, r: *BinaryReflectorFB ) -> ReflectR
                 pos: uoffset;
                 itField := *r.fields[ vec.firstFieldIdx + idx ];
                 if ItFieldType == .String
-                    pos = r.strings[ itField.stringIndex ].pos;
+                    pos = GetRelativePos( r.strings[ itField.stringIndex ].pos, r );
                 else if ItFieldType == .Table
-                    pos = r.tables[ itField.tableIndex ].tablePos;
+                    pos = GetRelativePos( r.tables[ itField.tableIndex ].tablePos, r );
 
                 Write( *pos, size_of(uoffset), r );
             }
@@ -536,7 +546,7 @@ Reflect :: ( d: *$T, sourceField: FieldInfo, r: *BinaryReflectorFB ) -> ReflectR
     {
         // Find offset to the vector start
         offset: uoffset;
-        Read( r, *offset );
+        Read( r, bytes_of( *offset ) );
 
         // Save position in the buffer where the next field will need to be read
         nextBufferHead := r.bufferHead + size_of(uoffset);
@@ -546,7 +556,7 @@ Reflect :: ( d: *$T, sourceField: FieldInfo, r: *BinaryReflectorFB ) -> ReflectR
         r.bufferHead += offset;
 
         count: u32;
-        ReadAndAdvance( r, *count );
+        ReadAndAdvance( r, bytes_of( *count ) );
 
         // What type of array are we trying to read into
         tia := cast(*Type_Info_Array) type_info(T);
@@ -575,7 +585,7 @@ Reflect :: ( d: *$T, sourceField: FieldInfo, r: *BinaryReflectorFB ) -> ReflectR
         {
             for * <<d
             {
-                result := Reflect( it, .{}, r );
+                result := ReflectField( it, .{}, r );
                 if result != .Ok
                     return result;
             }
@@ -585,7 +595,7 @@ Reflect :: ( d: *$T, sourceField: FieldInfo, r: *BinaryReflectorFB ) -> ReflectR
     return .Ok;
 }
 
-Reflect :: ( d: *$T, sourceField: FieldInfo, r: *BinaryReflectorFB ) -> ReflectResult
+ReflectField :: ( d: *$T, sourceField: FieldInfo, r: *BinaryReflectorFB ) -> ReflectResult
 #modify
 {
     fieldType := FieldTypeFor( cast(*Type_Info)T );
@@ -607,7 +617,7 @@ Reflect :: ( d: *$T, sourceField: FieldInfo, r: *BinaryReflectorFB ) -> ReflectR
     {
         // Find offset to the string start
         offset: uoffset;
-        Read( r, *offset );
+        Read( r, bytes_of( *offset ) );
 
         // Save position in the buffer where the next field will need to be read
         nextBufferHead := r.bufferHead + size_of(uoffset);
@@ -617,7 +627,7 @@ Reflect :: ( d: *$T, sourceField: FieldInfo, r: *BinaryReflectorFB ) -> ReflectR
         r.bufferHead += offset;
 
         count: u32;
-        ReadAndAdvance( r, *count );
+        ReadAndAdvance( r, bytes_of( *count ) );
 
         // TODO Provide a mode in which all indirect data points to the source read buffer and we never allocate
         <<d = alloc_string( count );
@@ -627,7 +637,7 @@ Reflect :: ( d: *$T, sourceField: FieldInfo, r: *BinaryReflectorFB ) -> ReflectR
     return .Ok;
 }
 
-Reflect :: ( d: *$T, sourceField: FieldInfo, r: *BinaryReflectorFB ) -> ReflectResult
+ReflectField :: ( d: *$T, sourceField: FieldInfo, r: *BinaryReflectorFB ) -> ReflectResult
 #modify
 {
     fieldType := FieldTypeFor( cast(*Type_Info)T );
@@ -640,13 +650,13 @@ Reflect :: ( d: *$T, sourceField: FieldInfo, r: *BinaryReflectorFB ) -> ReflectR
     }
     else
     {
-        ReadAndAdvance( r, d );
+        ReadAndAdvance( r, bytes_of( d ) );
     }
 
     return .Ok;
 }
 
-Reflect :: ( d: *$T, targetField: *FieldInfo, r: *BinaryReflectorFB ) -> ReflectResult
+ReflectField :: ( d: *$T, targetField: *FieldInfo, r: *BinaryReflectorFB ) -> ReflectResult
 #modify
 {
     fieldType := FieldTypeFor( cast(*Type_Info)T );
@@ -657,7 +667,7 @@ Reflect :: ( d: *$T, targetField: *FieldInfo, r: *BinaryReflectorFB ) -> Reflect
 }
 
 
-Register :: ( d: *$T, targetField: *FieldInfo, r: *BinaryWriterFB ) -> ReflectResult
+RegisterField :: ( d: *$T, targetField: *FieldInfo, r: *BinaryWriterFB ) -> ReflectResult
 #modify
 {
     // Pretty amazing to be able to do this tbh..
@@ -714,7 +724,7 @@ Register :: ( d: *$T, targetField: *FieldInfo, r: *BinaryWriterFB ) -> ReflectRe
             print_to_builder( *builder, "field = *r.fields[ table.firstFieldIdx + % ];\n", tableFieldIdx );
             print_to_builder( *builder, "field.type   = cast(*Type_Info) type_of( d.% );\n", fieldInfo.name );
             print_to_builder( *builder, "field.offset = cast(voffset) curOffset;\n" );
-            print_to_builder( *builder, "result = Register( *d.%, field, r );\n", fieldInfo.name );
+            print_to_builder( *builder, "result = RegisterField( *d.%, field, r );\n", fieldInfo.name );
             print_to_builder( *builder, "if result != .Ok return result;\n" );
 
             print_to_builder( *builder, "curOffset += field.size;\n" );
@@ -731,7 +741,7 @@ Register :: ( d: *$T, targetField: *FieldInfo, r: *BinaryWriterFB ) -> ReflectRe
     return result;
 }
 
-Register :: ( d: *$T, targetField: *FieldInfo, r: *BinaryWriterFB ) -> ReflectResult
+RegisterField :: ( d: *$T, targetField: *FieldInfo, r: *BinaryWriterFB ) -> ReflectResult
 #modify
 {
     fieldType := FieldTypeFor( cast(*Type_Info)T );
@@ -761,7 +771,7 @@ Register :: ( d: *$T, targetField: *FieldInfo, r: *BinaryWriterFB ) -> ReflectRe
         itField := *r.fields[ vec.firstFieldIdx + it_index ];
         itField.type = type_info(ItType);
 
-        result := Register( it, itField, r );
+        result := RegisterField( it, itField, r );
         if result != .Ok
             return result;
 
@@ -773,7 +783,7 @@ Register :: ( d: *$T, targetField: *FieldInfo, r: *BinaryWriterFB ) -> ReflectRe
     return .Ok;
 }
 
-Register :: ( d: *$T, targetField: *FieldInfo, r: *BinaryWriterFB ) -> ReflectResult
+RegisterField :: ( d: *$T, targetField: *FieldInfo, r: *BinaryWriterFB ) -> ReflectResult
 #modify
 {
     fieldType := FieldTypeFor( cast(*Type_Info)T );
@@ -792,7 +802,7 @@ Register :: ( d: *$T, targetField: *FieldInfo, r: *BinaryWriterFB ) -> ReflectRe
     return .Ok;
 }
 
-Register :: ( d: *$T, targetField: *FieldInfo, r: *BinaryWriterFB ) -> ReflectResult
+RegisterField :: ( d: *$T, targetField: *FieldInfo, r: *BinaryWriterFB ) -> ReflectResult
 #modify
 {
     fieldType := FieldTypeFor( cast(*Type_Info)T );
@@ -804,7 +814,7 @@ Register :: ( d: *$T, targetField: *FieldInfo, r: *BinaryWriterFB ) -> ReflectRe
     return .Ok;
 }
 
-Register :: ( d: *$T, targetField: *FieldInfo, r: *BinaryWriterFB ) -> ReflectResult
+RegisterField :: ( d: *$T, targetField: *FieldInfo, r: *BinaryWriterFB ) -> ReflectResult
 #modify
 {
     fieldType := FieldTypeFor( cast(*Type_Info)T );
