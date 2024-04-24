@@ -30,9 +30,10 @@ build :: ()
     {
         if arg ==
         {
-          case "release";
-            build_release = true;
-            print( "Building release version.\n" );
+            case "--release"; #through;
+            case "release";
+                build_release = true;
+                print( "Building release version.\n" );
         }
     }
 

@@ -1,3 +1,5 @@
+#import "Bucket_Array";
+
 // TODO This generates redeclaration errors.. so how is one supposed to resolve transitive dependencies?
 //#load "reflect.jai";
 
@@ -113,10 +115,10 @@ BinaryWriterFB :: struct
     #as using binary: BinaryReflectorFB( false );
 
     buffer: [] u8;
-    fields: [..] FieldInfo;
-    tables: [..] TableInfo;
-    vectors: [..] VectorInfo;
-    strings: [..] StringInfo;
+    fields: Bucket_Array( FieldInfo, 1024 );
+    tables: Bucket_Array( TableInfo, 1024 );
+    vectors: Bucket_Array( VectorInfo, 1024 );
+    strings: Bucket_Array( StringInfo, 1024 );
     measuredBufferSize: s64;
     bufferHead: s64;
     bufferOffset: s64;
@@ -656,7 +658,7 @@ ReflectField :: ( d: *$T, sourceField: FieldInfo, r: *BinaryReflectorFB ) -> Ref
     return .Ok;
 }
 
-ReflectField :: ( d: *$T, targetField: *FieldInfo, r: *BinaryReflectorFB ) -> ReflectResult
+ReflectField :: ( d: *$T, sourceField: *FieldInfo, r: *BinaryReflectorFB ) -> ReflectResult
 #modify
 {
     fieldType := FieldTypeFor( cast(*Type_Info)T );

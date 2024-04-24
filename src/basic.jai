@@ -1,3 +1,4 @@
+#import "Bucket_Array";
 
 Kilobytes :: 1024;
 Megabytes :: 1024 * Kilobytes;
@@ -99,9 +100,21 @@ Push :: ( array: *[..] $T, item: T )
     array_add( array, item );
 }
 
+Push :: ( array: *Bucket_Array( $T, $N ) ) -> *T
+{
+    pointer, locator := find_and_occupy_empty_slot( array, initialize=true );
+    return pointer;
+}
+
 PushEmpty :: ( array: *[..] $T, count: s64 )
 {
     array_resize( array, array.count + count );
+}
+
+PushEmpty :: ( array: *Bucket_Array, count: s64 )
+{
+    for 1..count
+        find_and_occupy_empty_slot( array, initialize=true );
 }
 
 Pop :: ( array: *[..] $T, out: *T )
