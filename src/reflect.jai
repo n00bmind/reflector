@@ -1,8 +1,3 @@
-#import "Compiler";
-#import "Math";
-#import "String";
-
-
 
 // TODO Turn polymorph args into ReflectorFlags, most likely
 Reflector :: struct (ReflectedTypeInfo: $T, $IsReading: bool, $SupportsPackedTypes: bool = false)
@@ -270,7 +265,11 @@ GenStaticTypeInfo :: ( stNodes: [] *Code_Struct ) #compile_time
 
 #scope_module
 
+#import "Basic";
+#import "String";
+#import "Math";
 #import "Hash_Table";
+#import "Compiler";
 
 globalBuilder: String_Builder;
 

@@ -1,2 +1,2 @@
 @echo off
-jai build.jai -import_dir W:\bin\jai_modules - %*
+jai build.jai -import_dir %DEV_HOME%/bin/jai_modules - %*
