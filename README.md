@@ -1,2 +1,2 @@
-# cerealkiller
-Serialization library for Jai
+# reflector
+Reflection library for Jai
