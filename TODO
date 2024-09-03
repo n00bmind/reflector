@@ -1,4 +1,24 @@
 
+- Start a decision LOG, to record any findings etc
+
+- Serialization format ideas (keep these as a "design principles" section in the docs):
+  · No padding. Could be an opt-in feature one day if needed
+  · Any "dev mode" metadata, like field names or features to help with diffing, should live completely separate from the main tables, at the very end, so it's easy to strip for "release" versions
+  · Sequential access (dumping to a target hierarchy) is more important than random access, which is just a "nice to have" so we may or may not add it in the end.
+    As a consequence:
+    · Every field is in memory-order, and inline when the source attribute / struct is inline (still with the necessary metadata to skip its subtree when needed).
+    · Everything else (vectors / strings) will be separate and there will be a readonly/zero-alloc mode where the target will point directly to the corresponding buffer memory (what about Jai growable arrays though?)
+  · For sizes of things, align stuff to 8 byte boundaries, which allows addressing 32 Gb with just a 4 byte size
+  · Otherwise, consider using an encoding for ints similar to what yojimbo does
+  · Validation happens at encoding-time. The buffer header contains a checksum value (crc?) to check for (and correct?) altered bits in the message.
+    We could still allow the verifier to run on the decoder side if needed, for untrusted scenarios in networking etc.
+  · When reading, compare the performance of reading in memory order vs. reading in the order dictated by the input buffer. Whether we decide for one or the other, investigate if prefetching could help in the presence of reordered fields.
+    Our baseline use cases where this should perform well are: no reordering at all (ever increasing ids in the wire), frequent reordering to minimize struct size & padding. When in doubt, in line with Jai's philosophy, favor the latter.
+    Note that even in the latter case, where structs are kept well packed, we could still decide to _encode_ ever increasing ids (like Bebop does), which may allow reducing the sizes of "vtables" or whatever..
+
+- Can we integrate Imsomniac's cache simulator in a Jai app?  https://github.com/InsomniacGames/ig-cachesim
+  Otherwise profile with VTune etc
+
 - Make the generator available as a metaprogram plugin, so people don't have to write their own metaprogram to use this
   https://github.com/Ivo-Balbaert/The_Way_to_Jai/blob/main/book/36_Plugins.md
   * Seems like we won't need to touch the metaprogram after all?
@@ -11,11 +31,4 @@
   Investigate what would be some good ways of detecting, displaying, storing & merging the differences in a hierarchy tree..
   This would be HUGE for gamedev!
 
-- New "competitors":
-  https://capnproto.org/
-  https://mechanical-sympathy.blogspot.com/2014/05/simple-binary-encoding.html
-  https://github.com/betwixt-labs/bebop
-
-  https://capnproto.org/news/2014-06-17-capnproto-flatbuffers-sbe.html
-
-
+- Rewatch https://youtu.be/ZQ5_u8Lgvyk?si=bH2_A2ffDxKQxbhN for pointers on how to actually turn this into a library
