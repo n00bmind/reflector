@@ -378,9 +378,9 @@ ReflectField :: ( d: *$T, sourceField: FieldInfo, r: *BinaryReflectorFB ) -> Ref
         {
             // Call typed Reflect on each serialised field
             st := type_info(T);
-            stNode :: #insert #run StructNodeIdentFor( type_info(T), true );
+            // stNode :: #insert #run StructNodeIdentFor( type_info(T), true );
 
-            _, info := GatherReflectedTypeInfo( st, stNode );
+            _, info := GatherReflectedTypeInfo( st );
 
             builder: String_Builder;  
             defer free_buffers(*builder);
@@ -471,9 +471,9 @@ ReflectField :: ( d: *$T, sourceField: FieldInfo, r: *BinaryReflectorFB ) -> Ref
         {
             // Call typed Reflect on each serialised field
             st := type_info(T);
-            stNode :: #insert #run StructNodeIdentFor( type_info(T), true );
+            // stNode :: #insert #run StructNodeIdentFor( type_info(T), true );
 
-            ok, info := GatherReflectedTypeInfo( st, stNode );
+            ok, info := GatherReflectedTypeInfo( st );
             if !ok
                 return "return .InvalidSchema;";
 
@@ -692,10 +692,10 @@ RegisterField :: ( d: *$T, targetField: *FieldInfo, r: *BinaryWriterFB ) -> Refl
     #insert -> string
     {
         st := type_info(T);
-        stNode :: #insert #run StructNodeIdentFor( type_info(T), true );
-        assert( stNode != null, "Code node for type '%' not available", st.name );
+        // stNode :: #insert #run StructNodeIdentFor( type_info(T), true );
+        // assert( stNode != null, "Code node for type '%' not available", st.name );
 
-        ok, info := GatherReflectedTypeInfo( st, stNode );
+        ok, info := GatherReflectedTypeInfo( st );
         if !ok
             return "return .InvalidSchema;";
 

@@ -16,6 +16,10 @@
     Our baseline use cases where this should perform well are: no reordering at all (ever increasing ids in the wire), frequent reordering to minimize struct size & padding. When in doubt, in line with Jai's philosophy, favor the latter.
     Note that even in the latter case, where structs are kept well packed, we could still decide to _encode_ ever increasing ids (like Bebop does), which may allow reducing the sizes of "vtables" or whatever..
 
+- A good point raised while using the lib as a module: what's the plan for when people want to serialise structs they don't control
+  (declared in an external module)? Ideally we'd like to provide a mechanism similar to the Flatbuffers schema or something that would
+  allow the same level of cross-version compatibility offered by the field ids mechanism?
+
 - Can we integrate Imsomniac's cache simulator in a Jai app?  https://github.com/InsomniacGames/ig-cachesim
   Otherwise profile with VTune etc
 

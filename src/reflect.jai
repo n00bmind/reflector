@@ -48,16 +48,11 @@ FindMemberDecl :: ( m: Type_Info_Struct_Member, members: [] *Code_Scope_Entry ) 
     return null;
 }
 
-FieldArgs :: struct
-{
-    name: string;
-    value: Any;
-}
 // NOTE All notes can be written as specified or with a 'reflect_' prefix before the given name
 // NOTE Returns a temporary args array
 // TODO Convert string args based on names & types array
 // TODO Extract to bricks
-ParseNote :: ( noteName: string, notes: [] *Code_Note, argNames: [] string = .[], argTypes: [] Type = .[] ) -> noteIndex: int, args: []string
+ParseNote :: ( noteName: string, notes: [] string, argNames: [] string = .[], argTypes: [] Type = .[] ) -> noteIndex: int, args: []string
 {
     assert( argNames.count == argTypes.count );
 
@@ -66,7 +61,7 @@ ParseNote :: ( noteName: string, notes: [] *Code_Note, argNames: [] string = .[]
 
     for notes
     {
-        noteStr := it.text;
+        noteStr := it;
         found := false;
 
         if starts_with( noteStr, name )
@@ -101,13 +96,17 @@ ParseNote :: ( noteName: string, notes: [] *Code_Note, argNames: [] string = .[]
     return -1, .[];
 }
 
+FieldArgs :: struct
+{
+    name: string;
+    value: Any;
+}
 FieldFlags :: enum_flags u8
 {
     Packed;
 }
 ReflectedFieldInfo :: struct
 {
-    decl: *Code_Declaration;
     //args: [..] FieldArgs;
     name: string;
     offset: s32;
@@ -147,20 +146,25 @@ FindFieldInfo :: ( id: u16, typeInfo: ReflectedTypeInfo ) -> *ReflectedFieldInfo
     return null;
 }
 
-// TODO Should probably cache all these calls in a hashtable
-GatherReflectedTypeInfo :: ( st: *Type_Info_Struct, stNode: *Code_Struct ) -> bool, ReflectedTypeInfo #compile_time
+// TODO Cache results in a hashtable so we only do this for each type the first time
+GatherReflectedTypeInfo :: ( st: *Type_Info_Struct, stLocation: Source_Code_Location = .{} ) -> bool, ReflectedTypeInfo #compile_time
 {
     result: ReflectedTypeInfo;
     Init( *result, st.members.count );
-    result.location = make_location( stNode );
+
+    if !stLocation.fully_pathed_filename
+        stLocation = compiler_get_struct_location( get_current_workspace(), st );
+    // TODO log_debug
+    // log_debug( "(note) Struct % was defined in % (workspace %)\n", st.name, stLocation, get_current_workspace() );
+    result.location = stLocation;
 
     // First of all, check if this type was marked as 'packed'
-    packedNoteIdx, _ := ParseNote( "packed", stNode.notes );
+    packedNoteIdx, _ := ParseNote( "packed", st.notes );
     result.isPacked = packedNoteIdx != -1;
 
     // Parse all field notes & their arguments, and populate a (decl-order?) array with all the info
     // TODO Special processing for constants (negative offset_in_bytes), usings, procedures? etc
-    // TODO TODO Check discovered layout against a persisted one from last compilation
+    // TODO Check discovered layout against a persisted one from last compilation
     // TODO When writing, *always order by offset in the source struct type* for cache friendliness
     // TODO When reading, the stream tells us the order of members to write to, but assume memory order too
     for m, index: st.members
@@ -168,18 +172,19 @@ GatherReflectedTypeInfo :: ( st: *Type_Info_Struct, stNode: *Code_Struct ) -> bo
         info := *result.fieldInfo[index];
         info.name = m.name;
 
-        decl := FindMemberDecl( m, stNode.block.members );
-        assert( decl != null, "Couldn't find member decl node for '%'\n", m.name );
-        info.decl = decl;
+        // decl := FindMemberDecl( m, stNode.block.members );
+        // assert( decl != null, "Couldn't find member decl node for '%'\n", m.name );
+        // info.decl = decl;
 
         // Parse field id
-        fieldNoteIdx, fieldNoteArgs := ParseNote( "field", decl.notes );
+        fieldNoteIdx, fieldNoteArgs := ParseNote( "field", m.notes );
         if fieldNoteIdx != -1
         {
             if !fieldNoteArgs
             {
+                msg := tprint( "In declaration of field '%': 'field' note requires a u16 'id' argument (in parenthesis)", m.name );
                 // TODO This is also way too verbose for my liking, and imo any metaprogram errors should be annotated by which metaprogram emitted them!
-                compiler_report( "'field' note requires a u16 'id' argument (in parenthesis)", make_location( decl.notes[fieldNoteIdx] ) );
+                compiler_report( msg, stLocation );
                 return false, result;
             }
 
@@ -187,17 +192,20 @@ GatherReflectedTypeInfo :: ( st: *Type_Info_Struct, stNode: *Code_Struct ) -> bo
             fieldId, idOk, _ := string_to_int( fieldNoteArgs[0], 10 );
             if !idOk
             {
-                compiler_report( "Unable to parse field 'id' argument into a u16", make_location( decl.notes[fieldNoteIdx] ) );
+                msg := tprint( "In declaration of field '%': Unable to parse field 'id' argument into a u16", m.name );
+                compiler_report( msg, stLocation );
                 return false, result;
             }
             else if fieldId <= 0
             {
-                compiler_report( "Field 'id' must be a positive (non-zero) integer", make_location( decl.notes[fieldNoteIdx] ) );
+                msg := tprint( "In declaration of field '%': Field 'id' must be a positive (non-zero) integer", m.name );
+                compiler_report( msg, stLocation );
                 return false, result;
             }
             else if fieldId > U16_MAX
             {
-                compiler_report( "Field 'id' argument is too big", make_location( decl.notes[fieldNoteIdx] ) );
+                msg := tprint( "In declaration of field '%': Field 'id' argument is too big", m.name );
+                compiler_report( msg, stLocation );
                 return false, result;
             }
 
@@ -246,6 +254,7 @@ GatherReflectedTypeInfo :: ( st: *Type_Info_Struct, stNode: *Code_Struct ) -> bo
     return true, result;
 }
 
+// TODO Not needed anymore?
 // FIXME #no_reset doesnt work at all with stuff that allocates!
 GenStaticTypeInfo :: ( stNodes: [] *Code_Struct ) #compile_time
 {
@@ -253,7 +262,7 @@ GenStaticTypeInfo :: ( stNodes: [] *Code_Struct ) #compile_time
     {
         print( "%\n", it.defined_type.name );
 
-        ok, info := GatherReflectedTypeInfo( it.defined_type, it );
+        ok, info := GatherReflectedTypeInfo( it.defined_type, make_location( it ) );
         assert( ok, "GatherReflectedTypeInfo failed for %", it.defined_type );
 
         table_set( *globalStructTypeInfoTable, it.defined_type, info );
@@ -273,6 +282,7 @@ GenStaticTypeInfo :: ( stNodes: [] *Code_Struct ) #compile_time
 
 globalBuilder: String_Builder;
 
+// TODO Not needed anymore?
 // NOTE Remember! Only structs for which we're calling Reflect() will appear here!
 #placeholder globalReflectedStructNodes;
 #no_reset globalStructTypeInfoTable: Table(*Type_Info_Struct, ReflectedTypeInfo);
@@ -285,17 +295,21 @@ GenReflectFunction :: ( T: Type, st: *Type_Info_Struct, reflector: $Reflector ) 
     // Find the code node for the given type declaration, so we can access exact source code locations for error reporting
     // I haven't found any way to reliably find the nodes for the struct type declaration given just the type info,
     // so we emit them from the metaprogram and place them in a constant with a known name for each type
-    stNode :: #insert #run StructNodeIdentFor( type_info(T), true );
-    assert( stNode != null, "Code node for type '%' not available", st.name );
+    // TODO This entirely eliminates the possibility of using this reflection system from a user's metaprogram!
+    // stNode :: #insert #run StructNodeIdentFor( type_info(T), true );
+    // assert( stNode != null, "Code node for type '%' not available", st.name );
 
     // For runtime code, we also gather all these nodes and generate the ReflectedTypeInfo for each of them,
     // and index that in globalStructTypeInfoTable. However, here at compile time, the #run directive that
     // builds that table may not have run yet, so we just go gather that info again..
-    ok, info := GatherReflectedTypeInfo( st, stNode );
+    ok, info := GatherReflectedTypeInfo( st );
     if !ok
         return "";
 
     isPacked := false;
+    // TODO Consider making all other customizable bits in Reflectors (including functions like Begin/EndReflectType etc.) be constants
+    // declared in the struct like this, so we can reason about them at compile time and skip unnecessary bits entirely for Reflectors
+    // that dont need them
     #if reflector.SupportsPackedTypes
     {
         // TODO Unions (seem to be accepted by the struct interface too)
@@ -313,6 +327,7 @@ GenReflectFunction :: ( T: Type, st: *Type_Info_Struct, reflector: $Reflector ) 
         if false //info.annotatedFieldCount == 0
         {
             // TODO All warnings should go to a file by default probably?
+            // TODO This is not even a warning, more like an "info"
             ReportWarning( info.location,
                            "Structured type '%' will be serialised but has no serialisation notes. Will default to memory-order fields.",
                            st.name );
@@ -320,7 +335,7 @@ GenReflectFunction :: ( T: Type, st: *Type_Info_Struct, reflector: $Reflector ) 
 
         // TODO Perhaps by default we should embed the existing ReflectedTypeInfo inside the custom reflector's ReflectedTypeInfo?
         append( *globalBuilder, "    info: r.ReflectedTypeInfo;\n" );
-        append( *globalBuilder, tprint( "    if BeginReflectType( *info, %, r )\n", st.name ) );
+        append( *globalBuilder, "    if BeginReflectType( *info, T, r )\n" );
         append( *globalBuilder, "    {\n" );
         append( *globalBuilder, "        defer EndReflectType( *info, r );\n" );
         append( *globalBuilder, "        \n" );

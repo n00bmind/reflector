@@ -71,6 +71,10 @@ build :: ()
 
 #scope_file
 
+// TODO TODO If we can live with just reporting the location of the enclosing struct declaration for errors (like we're currently doing)
+// I dont think most of this crap is needed
+// Test everything out with this removed..
+
 EmitStructCodeNodes :: true;
 PrintDebugLogs :: false;
 
