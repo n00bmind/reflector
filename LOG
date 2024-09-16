@@ -1,0 +1,7 @@
+
+12/09/2024
+
+Cannot rely on the metaprogram to provide a mapping of reflected types to their source code locations.
+This is mainly due to the requirement that the tool should be usable from a user's metaprogram, meaning we'd have to insert code in that metaprogram's
+metaprogram, which, even assuming it's possible at all, doesn't sound like something I'd really wanna do.
+

@@ -1,20 +1,31 @@
 
-- Start a decision LOG, to record any findings etc
-
 - Serialization format ideas (keep these as a "design principles" section in the docs):
   · No padding. Could be an opt-in feature one day if needed
-  · Any "dev mode" metadata, like field names or features to help with diffing, should live completely separate from the main tables, at the very end, so it's easy to strip for "release" versions
-  · Sequential access (dumping to a target hierarchy) is more important than random access, which is just a "nice to have" so we may or may not add it in the end.
-    As a consequence:
-    · Every field is in memory-order, and inline when the source attribute / struct is inline (still with the necessary metadata to skip its subtree when needed).
-    · Everything else (vectors / strings) will be separate and there will be a readonly/zero-alloc mode where the target will point directly to the corresponding buffer memory (what about Jai growable arrays though?)
-  · For sizes of things, align stuff to 8 byte boundaries, which allows addressing 32 Gb with just a 4 byte size
-  · Otherwise, consider using an encoding for ints similar to what yojimbo does
+  · Any "dev mode" metadata, like field names or features to help with diffing, should live completely separate from the main tables, at the very end,
+    so it's easy to strip for "release" versions.
+  · Sequential access (dumping to a target hierarchy) is more important than random access, which is just a "nice to have" so we may or may not add it
+    in the end. As a consequence:
+    · Every field is in memory-order, and inline when the source attribute / struct is inline
+      (still with the necessary metadata to skip its subtree when needed).
+    · Everything else (vectors / strings) will be separate and there will be a readonly/zero-alloc mode where the target will point directly to the
+      corresponding buffer memory (what about Jai growable arrays though? can we make them "read only" somehow?)
+  · For absolute positions of things, align stuff to 8 byte boundaries, which allows addressing 32 Gb with just a 4 byte offset
+  · Otherwise, consider using an encoding for ints similar to what yojimbo does?
   · Validation happens at encoding-time. The buffer header contains a checksum value (crc?) to check for (and correct?) altered bits in the message.
-    We could still allow the verifier to run on the decoder side if needed, for untrusted scenarios in networking etc.
-  · When reading, compare the performance of reading in memory order vs. reading in the order dictated by the input buffer. Whether we decide for one or the other, investigate if prefetching could help in the presence of reordered fields.
-    Our baseline use cases where this should perform well are: no reordering at all (ever increasing ids in the wire), frequent reordering to minimize struct size & padding. When in doubt, in line with Jai's philosophy, favor the latter.
+    Check other sums better than CRC for this.. what was this called? Hamilton codes?
+    We must still allow the verifier to run on the decoder side if needed, for untrusted scenarios in networking etc.
+  · This in turn means we should be able to skip most error handling while deserializing, beyond basic stuff like reading outside the buffer, as it's
+    assumed error verification has already happened (could integrate this as an optional pre-stage during deserialization)
+  · When reading, compare the performance of reading in memory order vs. reading in the order dictated by the input buffer. Whether we decide for one
+    or the other, investigate if prefetching could help in the presence of reordered fields.
+    Our baseline use cases where this should perform well are:
+      · no reordering at all (ever increasing ids in the wire)
+      · frequent reordering to minimize struct size & padding
+    When in doubt, in line with any system's language philosophy, favor the latter.
     Note that even in the latter case, where structs are kept well packed, we could still decide to _encode_ ever increasing ids (like Bebop does), which may allow reducing the sizes of "vtables" or whatever..
+  · Think about how to ensure that the different sub-trees remain independant of each other, so we can parallelize reading per sub-tree
+
+- May need to write a reference C++ version for comparing times etc
 
 - A good point raised while using the lib as a module: what's the plan for when people want to serialise structs they don't control
   (declared in an external module)? Ideally we'd like to provide a mechanism similar to the Flatbuffers schema or something that would
@@ -33,6 +44,13 @@
 
 - Another application that would be extremely useful, is to explore the possibility of developing a binary hierarchy diff tool.
   Investigate what would be some good ways of detecting, displaying, storing & merging the differences in a hierarchy tree..
-  This would be HUGE for gamedev!
+  This would be HUGE for gamedev, hot reloading etc!
 
 - Rewatch https://youtu.be/ZQ5_u8Lgvyk?si=bH2_A2ffDxKQxbhN for pointers on how to actually turn this into a library
+
+- Some interesting talks / reading about parsing Json:
+  https://www.youtube.com/watch?v=wlvKAT7SZIQ
+  https://www.youtube.com/watch?v=vd9J9PPmAMM
+  https://vimeo.com/644068002
+  https://github.com/simdjson/simdjson#about-simdjson
+
