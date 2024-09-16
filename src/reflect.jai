@@ -288,7 +288,7 @@ globalBuilder: String_Builder;
 #no_reset globalStructTypeInfoTable: Table(*Type_Info_Struct, ReflectedTypeInfo);
 
 
-GenReflectFunction :: ( T: Type, st: *Type_Info_Struct, reflector: $Reflector ) -> string #expand #compile_time
+GenReflectFunction :: ( T: Type, st: *Type_Info_Struct, R: Type ) -> string #expand #compile_time
 {
     defer free_buffers( *globalBuilder );
 
@@ -306,11 +306,13 @@ GenReflectFunction :: ( T: Type, st: *Type_Info_Struct, reflector: $Reflector ) 
     if !ok
         return "";
 
+    append( *globalBuilder, tprint( "    // Body of Reflect( *%, *% )\n", T, R ) );
+
     isPacked := false;
     // TODO Consider making all other customizable bits in Reflectors (including functions like Begin/EndReflectType etc.) be constants
     // declared in the struct like this, so we can reason about them at compile time and skip unnecessary bits entirely for Reflectors
     // that dont need them
-    #if reflector.SupportsPackedTypes
+    #if R.SupportsPackedTypes
     {
         // TODO Unions (seem to be accepted by the struct interface too)
         if info.isPacked
@@ -363,28 +365,32 @@ GenReflectFunction :: ( T: Type, st: *Type_Info_Struct, reflector: $Reflector ) 
 
 // Generate a separate polymorph instance and its corresponding body based on the type it was called with.
 // This way we only generate the overloads that are actually called from user code.
-// This signature seems to allow creating a specific overload for structs without using #modify
 // TODO When writing, *always order by offset in the source struct type* for cache friendliness
 // TODO When reading, the stream tells us the order of members to write to, which probably means the function body is the same
 // for all types, and we just HAVE TO do dynamic dispatch? Although, we can have a (compiletime) table of field id to member typeinfo
 // and recover a typed pointer to the member doing something like:
                 //M := get_root_type( m.type );
                 //Reflect( GetMemberValueAs( m, d, M ), r );
-Reflect :: ( d: *$T/interface struct {}, r: *$Reflector ) -> ReflectResult
+Reflect :: ( d: *$T, r: *$R ) -> ReflectResult
+#modify
+{
+    ti := cast(*Type_Info) T;
+    return ti.type == .STRUCT;
+}
 {
     // TODO Doing things this way means a new #run happens everytime we invoke this function, hence the same code is inserted more than once
     // So we probably want to keep a chached mapping of type_info to generated string
     // (for the 'production-ready' generators we need this anyway to generate the type descriptor tables)
     // Note that according to how_to 100 though, this #run should only be invoked once for each type we pass in $T
     // Do we see two because we pass both a reader and a writer in r for each type?
-    #insert #run GenReflectFunction( T, type_info( T ), type_of( r ) );
+    #insert #run GenReflectFunction( T, type_info( T ), R );
 }
 
 // TODO When benchmarking, test making a custom overload for BinaryReflectors that tries to streamline this as much as possible
 // NOTE Apparently there's a limit to macro recursion .. https://github.com/Jai-Community/Jai-Community-Library/wiki/Getting-Started#nested-macros
 // As demonstrated, we can refer to the constants block of the type of a declared argument to declare a separate argument, like with
 // ReflectedTypeInfo here, which is freaking awesome!
-ReflectField :: ( field: Code, fieldId: u16, name: string, offsetBytes: s64, info: *r.ReflectedTypeInfo, r: *$Reflector ) #expand
+ReflectField :: ( field: Code, fieldId: u16, name: string, offsetBytes: s64, info: *r.ReflectedTypeInfo, r: *$R ) #expand
 {
     result: ReflectResult = .Ok;
 

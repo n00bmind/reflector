@@ -357,8 +357,8 @@ Reflect :: inline ( d: *$T, r: *BinaryReflectorGM ) -> ReflectResult
     }
     else
     {
-        // TODO 
-        #assert( false && "Not implemented" );
+        // TODO Do we wanna have some default implementation for pointers?
+        // #assert false "Not implemented. You must provide your own Reflect() overload for this type.";
     }
     return .Ok;
 }

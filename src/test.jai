@@ -20,6 +20,7 @@ main :: ()
 }
 
 // FIXME compiler_get_nodes() errors if the type is not visible from reflect.jai
+// TODO This should be fixed now?
 #scope_export
 
 SimpleType :: struct
