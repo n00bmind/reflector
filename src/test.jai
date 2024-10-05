@@ -1,3 +1,8 @@
+// TODO Add an example test case similar to what codeape does, which touches on a lot of the use cases:
+// - Serialises in the metaprogram
+// - Deserialises in the target program
+// - Uses a custom Reflect() overload
+
 #import "Basic";
 #import "Windows";
 

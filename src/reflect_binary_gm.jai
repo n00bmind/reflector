@@ -293,12 +293,29 @@ IsPrimitiveArrayType :: inline ( $T : Type ) -> bool
     return IsPrimitiveType( tia.element_type );
 }
 
-Reflect :: inline ( d: *$T, r: *BinaryReflectorGM ) -> ReflectResult
+
+ReflectPacked :: inline ( d: *$T/interface struct {}, r: *BinaryReflectorGM ) -> ReflectResult
+{
+    ReflectRawBytes( bytes_of( d ), r );
+    return .Ok;
+}
+
+
+#scope_module
+
+// TODO See how could make this part of the Reflector (struct) interface,
+// so that the plugin knows what to insert for each Reflector subtype
+REFLECT_STUBS_GM :: #string STR
+
+Reflect :: inline ( d: *$T, r: *BinaryReflectorGM ) -> ReflectResult #expand
 #modify
 {
     ti := cast(*Type_Info) T;
     return ti.type != .STRUCT;
 }
+// TODO This body should belong in a function called ReflectField, and we should be calling into that automatically
+// from reflect.jai from a Reflect() overload with a #modify block like the one just above
+// TODO Problem is, this calls into Reflect() again and so this code needs to also be injected into the user app global namespace
 {
     #if #run IsPrimitiveType( T )
     {
@@ -358,15 +375,10 @@ Reflect :: inline ( d: *$T, r: *BinaryReflectorGM ) -> ReflectResult
     else
     {
         // TODO Do we wanna have some default implementation for pointers?
-        // #assert false "Not implemented. You must provide your own Reflect() overload for this type.";
+        #assert false "Not implemented. You must provide your own Reflect() overload for this type.";
     }
     return .Ok;
 }
 
-ReflectPacked :: inline ( d: *$T/interface struct {}, r: *BinaryReflectorGM ) -> ReflectResult
-{
-    ReflectRawBytes( bytes_of( d ), r );
-    return .Ok;
-}
-
+STR
 

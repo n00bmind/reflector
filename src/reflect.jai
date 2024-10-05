@@ -288,6 +288,8 @@ globalBuilder: String_Builder;
 #no_reset globalStructTypeInfoTable: Table(*Type_Info_Struct, ReflectedTypeInfo);
 
 
+#scope_export
+
 GenReflectFunction :: ( T: Type, st: *Type_Info_Struct, R: Type ) -> string #expand #compile_time
 {
     defer free_buffers( *globalBuilder );
@@ -361,7 +363,7 @@ GenReflectFunction :: ( T: Type, st: *Type_Info_Struct, R: Type ) -> string #exp
 }
 
 
-#scope_export
+#scope_module
 
 // Generate a separate polymorph instance and its corresponding body based on the type it was called with.
 // This way we only generate the overloads that are actually called from user code.
@@ -371,6 +373,9 @@ GenReflectFunction :: ( T: Type, st: *Type_Info_Struct, R: Type ) -> string #exp
 // and recover a typed pointer to the member doing something like:
                 //M := get_root_type( m.type );
                 //Reflect( GetMemberValueAs( m, d, M ), r );
+
+REFLECT_STUBS :: #string STR
+
 Reflect :: ( d: *$T, r: *$R ) -> ReflectResult
 #modify
 {
@@ -410,4 +415,5 @@ ReflectField :: ( field: Code, fieldId: u16, name: string, offsetBytes: s64, inf
     }
 }
 
+STR
 

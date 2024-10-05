@@ -1,4 +1,7 @@
 
+- Write some simple usage instructions in the README, including the syntax to use to be able to use the plugin in a user's
+  metaprogram.
+
 - Serialization format ideas (keep these as a "design principles" section in the docs):
   · No padding. Could be an opt-in feature one day if needed
   · Any "dev mode" metadata, like field names or features to help with diffing, should live completely separate from the main tables, at the very end,
