@@ -124,7 +124,20 @@ BinaryWriterFB :: struct
     bufferOffset: s64;
 }
 
-#scope_file
+FieldInfo :: struct
+{
+    type: *Type_Info;
+    union
+    {
+        value: Any;
+        tableIndex: s64;
+        vectorIndex: s64;
+        stringIndex: s64;
+    }
+    size: s32;
+    // Relative to start of its table, unused in vectors
+    offset: voffset;
+}
 
 GetRelativePos :: ( pos: s64, r: *BinaryWriterFB ) -> uoffset
 {
@@ -156,6 +169,8 @@ RewindAndWrite :: ( data: *void, size: s64, r: *BinaryWriterFB ) -> uoffset
     Write( data, size, r );
     return result;
 }
+
+#scope_file
 
 // Always ensure we're not trying to read past the end of the buffer
 // If you call this with an exhausted buffer, no copy will occur
@@ -194,21 +209,6 @@ ReadAndAdvance :: inline ( using r: *BinaryReflectorFB, d: [] u8 )
     bufferHead += bytesToCopy;
 }
 
-
-FieldInfo :: struct
-{
-    type: *Type_Info;
-    union
-    {
-        value: Any;
-        tableIndex: s64;
-        vectorIndex: s64;
-        stringIndex: s64;
-    }
-    size: s32;
-    // Relative to start of its table, unused in vectors
-    offset: voffset;
-}
 
 TableInfo :: struct
 {
@@ -317,7 +317,9 @@ ArrayElementTypeFor :: ( t: *Type_Info_Array ) -> Type
 }
 
 
-#scope_export
+#scope_module
+
+REFLECT_STUBS_FB :: #string STR
 
 // NOTE We cannot use a combined function accepting BinaryReflectorFB here, as that is still a polymorph,
 // and hence atm the compiler fails to resolve that against the generic Reflect() (accepting $Reflector)
@@ -355,6 +357,10 @@ Reflect :: ( d: *$T/interface struct {}, r: *BinaryReaderFB ) -> ReflectResult
     return result;
 }
 
+STR
+
+
+#scope_export
 
 // TODO We'll need to change build.jai to be able to discover these types too?
 ReflectField :: ( d: *$T, sourceField: FieldInfo, r: *BinaryReflectorFB ) -> ReflectResult

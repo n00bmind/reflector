@@ -5,8 +5,10 @@
 #import "Math";
 #import "Hash_Table";
 
-#load "src/basic.jai";
-#load "src/reflect.jai"; // For StructNodeIdentFor
+Reflector :: #import "reflector";
+
+// #load "src/basic.jai";
+// #load "src/reflect.jai"; // For StructNodeIdentFor
 
 build :: ()
 {
@@ -31,6 +33,7 @@ build :: ()
         if arg ==
         {
             case "--release"; #through;
+            case "-release"; #through;
             case "release";
                 build_release = true;
                 print( "Building release version.\n" );
@@ -39,8 +42,6 @@ build :: ()
 
 
     w := compiler_create_workspace();
-    // I assume this must happen before we add files to the compilation?
-    compiler_begin_intercept( w );
 
     // Main executable
     {
@@ -58,16 +59,23 @@ build :: ()
             options.backend =.X64;
         }
         set_build_options( options, w );
-
-        add_build_file( "src/test.jai", w );
     }
 
-    MessageLoop( w );
+    // I assume this must happen before we add files to the compilation?
+    // compiler_begin_intercept( w );
 
-    compiler_end_intercept(w);
+    Reflector.AddSourceStubs( w );
+    add_build_file( "src/test.jai", w );
+
+    // MessageLoop( w );
+
+    // compiler_end_intercept(w);
 }
 #run build();
 
+
+#if 0
+{
 
 #scope_file
 
@@ -287,3 +295,5 @@ globalEmittedNodesTable: bool = false;
 
 globalRunners: [..] *Code_Procedure_Header;
 globalRunnerArgs: [..] string;
+
+}

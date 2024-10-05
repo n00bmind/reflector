@@ -6,11 +6,12 @@
 #import "Basic";
 #import "Windows";
 
-// TODO Make building tests a separate build command that fetches dependencies etc.
+// TODO We're inserting code that now requires the user to import stuff.. how do we deal with this?
+#import "Bucket_Array";
+// TODO Automate dependency downloading etc
 #import "bricks";
+#import "reflector";
 
-#load "reflect_binary_gm.jai";
-#load "reflect_binary_fb.jai";
 #load "tests/monster.jai";
 
 main :: ()
