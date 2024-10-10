@@ -1,0 +1,21 @@
+
+HEADER
+offset  size    desc
+0       4       offset to root table
+4       X       CRC blob
+
+
+TABLE (first is at pos X+4)
+offset  size    desc
+0       2       serialized field count (FC)                             // <-- start of vtable
+2       2       max serialized field id                                 // TODO do we need this?
+4       4*FC    8-aligned sorted field offsets (from table start)       // TODO Test interleaving offset/id, test 6-byte offsets
+4+4*FC  2*FC    field ids of every field in corresponding order 
+4+6*FC  X       start of first table field                              // <-- start of table contents
+
+
+STRINGS & ARRAYS
+offset  size    desc
+0       4       length / count
+4       X       content
+

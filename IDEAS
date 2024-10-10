@@ -1,32 +1,80 @@
 
 :: Objectives
 
-- Very fast deserialization. Serialization can take a bit more time. When choosing between compactness and speed, we'll choose speed every time, and rely on compression where minimal size is needed.
-- Direct access. An in-memory or memory-mapped buffer can already provide direct access to any data field at any level of depth, with zero memory copies (no deserialization), similar to Flatbuffers.
-  The structs holding this data however must be the final user structs and types, so no conversion or access API is necessary at all.
-- Flexibility. Again like Flatbuffers, it should support forwards/backwards compatibility, i.e. the ability to add/delete struct attributes or alter how they're laid out in memory without complicated explicit versioning mechanisms.
-- Really easy to use. A user should only need to tag which structs will be serialized and a metaprogram should take care of the rest. No schemas, no need to write any code.
-- Should have some extensibility. Even though the metaprogram should take care of all the basic constructs of the language, there should be a mechanism to customize how certain types are reflected.
+- Very fast deserialization. Serialization can take a bit more time. When choosing between compactness and speed, we'll choose speed
+  every time, and rely on compression where minimal size is needed.
+
+- Sequential access (dumping to a target in-memory hierarchy of user types) is the main use case, and hence the one we'll optimize for.
+  Direct access (no deserialization mode, similar to Flatbuffers) is a nice-to-have. The structs holding the data in direct access mode,
+  however, must be the final user structs and types, so no conversion or custom access API is necessary at all.
+
+- Flexibility. Must support forwards/backwards compatibility, i.e. the ability to add/delete struct attributes or alter how structs are
+  laid out in memory without complicated explicit versioning mechanisms.
+
+- Really easy to use. A user should only need to (optionally) tag the structs to serialize and a metaprogram should take care of the rest.
+  No schemas, no need to write any code.
+
+- Should have a fair amount of extensibility. Even though the metaprogram should take care of all the basic constructs of the language,
+  there should be a mechanism to customize how certain types are reflected, and also for users to provide their own entirely new
+  reflectors.
+
+
+:: Design principles
+
+- No padding. Could be an opt-in feature one day if needed.
+
+- Any "dev mode" metadata, like field names or features to help with diffing, should live completely separate from the main tables, at
+  the very end, so it's easy to strip for "release" versions.
+
+- Sequential access (dumping to a target hierarchy) is more important than direct access, which is just a "nice to have" so we may or may
+  not add it in the end. As a consequence:
+  · Every field is in memory-order, and inline when the source attribute / struct is inline
+    (still with the necessary metadata to skip its subtree when needed).
+  · Everything else (vectors / strings) will be separate and in direct access mode the pointers will be fixed up so they point directly
+    to the corresponding buffer memory (what about Jai growable arrays though? can we make them "read only" somehow?)
+
+- Relative pointers will be used where possible, so that we can still achieve huge sizes without the need for 64 bit offsets.
+  When necessary, align stuff to 8 byte boundaries, which allows addressing 32 Gb with just a 4 byte offset
+  (otherwise, consider using an encoding for ints similar to what yojimbo does?).
+
+- Validation happens at encoding-time. The buffer header contains a checksum value (crc?) to check for (and correct?) altered bits in the
+  message. Check other sums better than CRC for this.. what was this called? Hamilton codes?
+  We must still allow the verifier to run on the decoder side if needed, for untrusted scenarios in networking etc.
+- This in turn means we should be able to skip most error handling while deserializing, beyond basic stuff like reading outside the
+  buffer, as it's assumed error verification has already happened (could integrate this as an optional pre-stage during deserialization).
+
+- When reading, compare the performance of reading in memory order vs. reading in the order dictated by the input buffer. Whether we
+  decide for one or the other, investigate if prefetching could help in the presence of reordered fields.
+  Our baseline use cases where this should perform well are:
+    · no reordering at all (ever increasing ids in the wire)
+    · frequent reordering to minimize struct size & padding while developing
+  When in doubt, favor the latter.
+
+- Think about how to ensure that the different sub-trees remain independent of each other, so we easily parallelize reading per sub-tree
 
 
 :: Details
 
-- For direct access and reducing redundancy, we'll have a 'disaggregated' vtable mechanism, where entries will point to the relative location of each field in a type.
-  However, since we prioritize speed, deserialization of in-order fields (the vast majority of situations) shouldn't require looking up the vtable at all, even if that requires additional redundant data.
-  Vtables (representing the schema) will be serialized first, close to the start of the buffer, as compactly as possible, and separate from the actual data. This will allow using small offsets to locate them and should keep them reasonably hot while deserializing.
+- For direct access and reducing redundancy, we'll have a 'disaggregated' vtable mechanism, where entries will point to the relative
+  location of each field in a type.
+  However, since we prioritize speed, deserialization of in-order fields (the vast majority of situations) shouldn't require looking up
+  the vtable at all, even if that requires additional redundant data.
+  Two strategies to test here:
+  · Vtables are serialized at the very beginning of each table, which precludes deduplicating them (not sure I care), but would mean
+    they should be prefetched nicely.
+  · Vtables (representing the schema) are serialized first, close to the start of the buffer, as compactly as possible, and separate
+    from the actual data. This would allow using small offsets to locate them and should keep them reasonably hot while deserializing.
 
-- Relative pointers will be used where possible, so that we can still achieve huge sizes without the need for 64 bit offsets.
-
-- During deserialization, we need to always prioritize reading & writing memory in order, meaning filling in all inline data first, while out of line (dynamic) data should be:
+- During deserialization, we need to always prioritize reading & writing memory in order, meaning filling in all inline data first, while
+  out of line (dynamic) data should be:
   1. Allocated using a linear arena used for this purpose
-  2. Enqueued to be deserialized after all inline data has been done. Deserializing these secondary structs will happen in the order they were allocated in
+  2. Enqueued to be deserialized after all inline data has been done. Deserializing these secondary structs will happen in the order they
+     were allocated in
   Ofc, this will all require adequate profiling and optimization.
+
 
 :: Refs
 
 - Flatbuffer C implementation ofc
 - Check https://github.com/inkeliz/karmem
 
-
-:: Name
-Rename this to 'Reflector' or something on that theme

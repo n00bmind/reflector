@@ -1,7 +1,13 @@
 
-12/09/2024
+06/10/2024
 
-Cannot rely on the metaprogram to provide a mapping of reflected types to their source code locations.
-This is mainly due to the requirement that the tool should be usable from a user's metaprogram, meaning we'd have to insert code in that metaprogram's
-metaprogram, which, even assuming it's possible at all, doesn't sound like something I'd really wanna do.
+Realised that in order to have a custom per-type version of each Reflect() procedure (i.e. a polymorphic Reflect),
+we need to insert the body of Reflect() and everything that ends up calling back into Reflect (i.e. ReflectField)
+into the global namespace of the user's program. Otherwise there's no way we can inspect user types from compile-time
+functions inside the module (since the global namespace is not visible from there) and also we could not support
+user-provided Reflect() overloads (for the same reason).
+
+Also realised that we're gonna need to do this through a metaprogram plugin.
+This is mainly due to the requirement that the tool should be usable from a user's metaprogram, and not just a "normal"
+program. Using a plugin allows us to cover both cases.
 
