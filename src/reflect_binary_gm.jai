@@ -306,6 +306,21 @@ ReflectPacked :: inline ( d: *$T/interface struct {}, r: *BinaryReflectorGM ) ->
 // so that the plugin knows what to insert for each Reflector subtype
 REFLECT_STUBS_GM :: #string STR
 
+Reflect :: ( d: *$T, r: *BinaryReflectorGM ) -> ReflectResult
+#modify
+{
+    ti := cast(*Type_Info) T;
+    return ti.type == .STRUCT;
+}
+{
+    // TODO Doing things this way means a new #run happens everytime we invoke this function, hence the same code is inserted more than once
+    // So we probably want to keep a chached mapping of type_info to generated string
+    // (for the 'production-ready' generators we need this anyway to generate the type descriptor tables)
+    // Note that according to how_to 100 though, this #run should only be invoked once for each type we pass in $T
+    // Do we see two because we pass both a reader and a writer in r for each type?
+    #insert #run GenReflectFunction( T, type_info( T ), type_of( r ) );
+}
+
 Reflect :: inline ( d: *$T, r: *BinaryReflectorGM ) -> ReflectResult #expand
 #modify
 {

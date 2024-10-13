@@ -24,6 +24,12 @@ Push :: ( using buffer: *BufferBuilder, source: [] u8 )
     CopyFrom( buffer, source, buffer.size );
 }
 
+Push :: ( using buffer: *BufferBuilder, value: $T )
+{
+    source := value;
+    CopyFrom( buffer, []u8.{ size_of(type_of( source )), cast(*u8) *source }, buffer.size );
+}
+
 PushEmpty :: ( using buffer: *BufferBuilder, extraSize: int )
 {
     ResizeExtra( buffer, extraSize );

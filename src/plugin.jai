@@ -27,6 +27,7 @@ AddSourceStubs :: ( w: Workspace )
     // a separate mode in which everything is kept inside the module and callable from user code (i.e. not an inserted string)
     // so that the user can select whether they want to tradeoff potentially slower compilation times for the improved runtime perf.
     add_build_string( REFLECT_STUBS, w );
+    add_build_string( REFLECT_STUBS_BIN, w );
     add_build_string( REFLECT_STUBS_GM, w );
     add_build_string( REFLECT_STUBS_FB, w );
 }

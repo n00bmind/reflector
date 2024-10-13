@@ -19,7 +19,7 @@ main :: ()
     print( "___________\n\n" );
     TestBinarySerializer( "Flatbuffers", BinaryReaderFB, BinaryWriterFB );
     print( "___________\n\n" );
-    // TestBinarySerializer( "Signature", BinaryReader, BinaryWriter );
+    TestBinarySerializer( "Signature", BinaryReader, BinaryWriter );
 }
 
 #scope_file

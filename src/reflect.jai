@@ -376,21 +376,6 @@ GenReflectFunction :: ( T: Type, st: *Type_Info_Struct, R: Type ) -> string #exp
 
 REFLECT_STUBS :: #string STR
 
-Reflect :: ( d: *$T, r: *$R ) -> ReflectResult
-#modify
-{
-    ti := cast(*Type_Info) T;
-    return ti.type == .STRUCT;
-}
-{
-    // TODO Doing things this way means a new #run happens everytime we invoke this function, hence the same code is inserted more than once
-    // So we probably want to keep a chached mapping of type_info to generated string
-    // (for the 'production-ready' generators we need this anyway to generate the type descriptor tables)
-    // Note that according to how_to 100 though, this #run should only be invoked once for each type we pass in $T
-    // Do we see two because we pass both a reader and a writer in r for each type?
-    #insert #run GenReflectFunction( T, type_info( T ), R );
-}
-
 // TODO When benchmarking, test making a custom overload for BinaryReflectors that tries to streamline this as much as possible
 // NOTE Apparently there's a limit to macro recursion .. https://github.com/Jai-Community/Jai-Community-Library/wiki/Getting-Started#nested-macros
 // As demonstrated, we can refer to the constants block of the type of a declared argument to declare a separate argument, like with
