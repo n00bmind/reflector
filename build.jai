@@ -41,10 +41,10 @@ build :: ()
     }
 
 
-    w := compiler_create_workspace();
-
-    // Main executable
+    // Test executable
     {
+        w := compiler_create_workspace();
+
         options := global_options;
         options.output_type = .EXECUTABLE;
         options.output_executable_name = "test";
@@ -59,17 +59,48 @@ build :: ()
             options.backend =.X64;
         }
         set_build_options( options, w );
+
+        // I assume this must happen before we add files to the compilation?
+        // compiler_begin_intercept( w );
+
+        Reflector.AddSourceStubs( w );
+        add_build_file( "src/test.jai", w );
+
+        // MessageLoop( w );
+
+        // compiler_end_intercept(w);
     }
 
-    // I assume this must happen before we add files to the compilation?
-    // compiler_begin_intercept( w );
+    // Benchmark executable
+    {
+        w := compiler_create_workspace();
 
-    Reflector.AddSourceStubs( w );
-    add_build_file( "src/test.jai", w );
+        options := global_options;
+        options.output_type = .EXECUTABLE;
+        options.output_executable_name = "bench";
+        if build_release
+        {
+            set_optimization( *options, .VERY_OPTIMIZED, true );
+            options.backend =.LLVM;
+        }
+        else
+        {
+            set_optimization( *options, .DEBUG, true );
+            options.backend =.X64;
+        }
+        set_build_options( options, w );
 
-    // MessageLoop( w );
+        // I assume this must happen before we add files to the compilation?
+        // compiler_begin_intercept( w );
 
-    // compiler_end_intercept(w);
+        Reflector.AddSourceStubs( w );
+        add_build_file( "src/bench.jai", w );
+
+        // MessageLoop( w );
+
+        // compiler_end_intercept(w);
+    }
+
 }
 #run build();
 

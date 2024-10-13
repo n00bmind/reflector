@@ -117,9 +117,9 @@ ReflectedFieldInfo :: struct
 ReflectedTypeInfo :: struct
 {
     location: Source_Code_Location;
-    // Contains all the struct's members, not just the annotated ones
+    // Contains all the struct's members, not just the annotated ones, in memory order
     fieldInfo: [] ReflectedFieldInfo;
-    annotatedFieldCount: s32;
+    annotatedFieldCount: u16;
     maxId: u16;
     isPacked: bool;
 }
@@ -247,7 +247,7 @@ GatherReflectedTypeInfo :: ( st: *Type_Info_Struct, stLocation: Source_Code_Loca
             info.offset = cast(s32)m.offset_in_bytes;
         }
         // In this case, all fields are (auto) annotated
-        result.annotatedFieldCount = cast(s32) st.members.count;
+        result.annotatedFieldCount = cast(u16) st.members.count;
         result.maxId = cast(u16) st.members.count;
     }
 

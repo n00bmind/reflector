@@ -1,8 +1,5 @@
 #import "Bucket_Array";
 
-// TODO This generates redeclaration errors.. so how is one supposed to resolve transitive dependencies?
-//#load "reflect.jai";
-
 //
 // Binary reflector for the Flatbuffers format
 // Not trying to be perfectly conforming to spec, yet.
@@ -324,6 +321,7 @@ REFLECT_STUBS_FB :: #string STR
 // NOTE We cannot use a combined function accepting BinaryReflectorFB here, as that is still a polymorph,
 // and hence atm the compiler fails to resolve that against the generic Reflect() (accepting $Reflector)
 // However in this case I dont think that's all that important
+// TODO Test what happens with the latest compiler version
 Reflect :: ( d: *$T/interface struct {}, r: *BinaryWriterFB ) -> ReflectResult
 {
     rootField: FieldInfo;
