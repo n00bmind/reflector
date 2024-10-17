@@ -30,8 +30,9 @@
   not add it in the end. As a consequence:
   · Every field is in memory-order, and inline when the source attribute / struct is inline
     (still with the necessary metadata to skip its subtree when needed).
-  · Everything else (vectors / strings) will be separate and in direct access mode the pointers will be fixed up so they point directly
+  · Everything else (arrays / strings) will be separate and in direct access mode the pointers will be fixed up so they point directly
     to the corresponding buffer memory (what about Jai growable arrays though? can we make them "read only" somehow?)
+    Note that pointing directly to the read buffer memory is only possible for arrays in the case of arrays of primitive types.
 
 - Relative pointers will be used where possible, so that we can still achieve huge sizes without the need for 64 bit offsets.
   When necessary, align stuff to 8 byte boundaries, which allows addressing 32 Gb with just a 4 byte offset

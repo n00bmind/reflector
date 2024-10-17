@@ -6,7 +6,7 @@ BufferBuilder :: struct( PageSize: int )
     PageShift :: #run Log2( PageSize );
     Page :: [] u8;
 
-    size: s64;
+    count: s64;
     pages: [] Page;
     // TODO Allocator
 }
@@ -21,13 +21,13 @@ FindPage :: inline ( using buffer: *BufferBuilder, index: int ) -> pageIndex: in
 
 Push :: ( using buffer: *BufferBuilder, source: [] u8 )
 {
-    CopyFrom( buffer, source, buffer.size );
+    CopyFrom( buffer, source, buffer.count );
 }
 
 Push :: ( using buffer: *BufferBuilder, value: $T )
 {
     source := value;
-    CopyFrom( buffer, []u8.{ size_of(type_of( source )), cast(*u8) *source }, buffer.size );
+    CopyFrom( buffer, []u8.{ size_of(type_of( source )), cast(*u8) *source }, buffer.count );
 }
 
 PushEmpty :: ( using buffer: *BufferBuilder, extraSize: int )
@@ -43,7 +43,7 @@ CopyFrom :: ( using buffer: *BufferBuilder, source: [] u8, tgtOffset: int )
 {
     assert( tgtOffset >= 0 );
 
-    if tgtOffset + source.count > buffer.size
+    if tgtOffset + source.count > buffer.count
         Resize( buffer, tgtOffset + source.count );
 
     pageIndex, offsetInPage := FindPage( buffer, tgtOffset );
@@ -75,7 +75,7 @@ CopyTo :: ( using buffer: *BufferBuilder, target: [] u8, srcOffset: int = 0 )
 
     p := buffer.pages.data + pageIndex;
     tgt := target.data;
-    remaining := min( target.count, buffer.size - srcOffset );
+    remaining := min( target.count, buffer.count - srcOffset );
 
     while remaining > 0
     {
@@ -92,7 +92,7 @@ CopyTo :: ( using buffer: *BufferBuilder, target: [] u8, srcOffset: int = 0 )
 // NOTE Returned array is temporary by default
 ToArray :: ( using buffer: *BufferBuilder, allocator: Allocator = temp ) -> [] u8
 {
-    result, _ := NewArray( size, u8, false,, allocator );
+    result, _ := NewArray( count, u8, false,, allocator );
     CopyTo( buffer, result );
 
     return result;
@@ -100,18 +100,18 @@ ToArray :: ( using buffer: *BufferBuilder, allocator: Allocator = temp ) -> [] u
 
 ResizeExtra :: ( using buffer: *BufferBuilder, extraSize: int )
 {
-    Resize( buffer, buffer.size + extraSize );
+    Resize( buffer, buffer.count + extraSize );
 }
 
 Resize :: ( using buffer: *BufferBuilder, newSize: int )
 {
     Reserve( buffer, newSize );
-    buffer.size = newSize;
+    buffer.count = newSize;
 }
 
 ReserveExtra :: ( using buffer: *BufferBuilder, extraSize: int )
 {
-    Reserve( buffer, buffer.size + extraSize );
+    Reserve( buffer, buffer.count + extraSize );
 }
 
 Reserve :: ( using buffer: *BufferBuilder, newCapacity: int )

@@ -248,6 +248,7 @@ GatherReflectedTypeInfo :: ( st: *Type_Info_Struct, stLocation: Source_Code_Loca
         }
         // In this case, all fields are (auto) annotated
         result.annotatedFieldCount = cast(u16) st.members.count;
+        // Valid ids start at 1
         result.maxId = cast(u16) st.members.count;
     }
 
@@ -271,6 +272,97 @@ GenStaticTypeInfo :: ( stNodes: [] *Code_Struct ) #compile_time
     // Can't have spaces in notes!
 } @runAfterTypechecking(globalReflectedStructNodes)
 
+
+IsPrimitiveType :: inline ( ti: *Type_Info ) -> bool
+{
+    return ti.type == .INTEGER || ti.type == .FLOAT || ti.type == .BOOL || ti.type == .ENUM;
+}
+IsPrimitiveType :: inline ( $T: Type ) -> bool
+{
+    return IsPrimitiveType( cast(*Type_Info) T );
+}
+
+// TODO We should be able to make these 'constexpr/eval' functions, but how does one do that in Jai?
+// May be a good Q for the next Q&A
+IsArrayType :: inline ( $T: Type ) -> bool
+{
+    ti := cast(*Type_Info) T;
+    return ti.type == .ARRAY || ti.type == .STRING;
+}
+
+IsFixedArrayType :: inline ( $T: Type ) -> bool
+{
+    ti := cast(*Type_Info) T;
+    if ti.type != .ARRAY
+        return false;
+    tia := cast(*Type_Info_Array) T;
+    return tia.array_type == .FIXED;
+}
+
+IsPrimitiveArrayType :: inline ( $T : Type ) -> bool
+{
+    ti := cast(*Type_Info) T;
+
+    if ti.type == .STRING
+        return true;
+
+    if ti.type != .ARRAY
+        return false;
+
+    tia := cast(*Type_Info_Array) ti;
+    return IsPrimitiveType( tia.element_type );
+}
+
+
+// Utility procs to always ensure we're not trying to read past the end of the buffer
+// If you call these with an exhausted buffer, no copy will occur, and the bufferHead will remain at buffer.count
+// TODO Ideally we'd probably want to make these non polymorphic on r (or even completely)
+// TODO Compiler bug! Using 'using r' in these causes size_of(T) to always return 8
+Read :: inline ( r: *Reflector, d: *$T )
+{
+    bytesToCopy := min( size_of(T), r.buffer.count - r.bufferHead );
+    Copy( r.buffer.data + r.bufferHead, d, bytesToCopy );
+}
+
+Read :: inline ( r: *Reflector, d: *$T, offset: s64 )
+{
+    bytesToCopy := min( size_of(T), r.buffer.count - offset );
+    Copy( r.buffer.data + offset, d, bytesToCopy );
+}
+
+ReadAndAdvance :: inline ( r: *Reflector, d: *$T )
+{
+    bytesToCopy := min( size_of(T), r.buffer.count - r.bufferHead );
+    Copy( r.buffer.data + r.bufferHead, d, bytesToCopy );
+    r.bufferHead += bytesToCopy;
+}
+
+ReadAndAdvance :: inline ( r: *Reflector, d: [] u8 )
+{
+    bytesToCopy := min( d.count, r.buffer.count - r.bufferHead );
+    Copy( r.buffer.data + r.bufferHead, d.data, bytesToCopy );
+    r.bufferHead += bytesToCopy;
+}
+
+ReadAndAdvance :: inline ( r: *Reflector, d: [] $T )
+{
+    dSize := d.count * size_of(T);
+    bytesToCopy := min( dSize, r.buffer.count - r.bufferHead );
+    Copy( r.buffer.data + r.bufferHead, d.data, bytesToCopy );
+    r.bufferHead += bytesToCopy;
+}
+
+Advance :: inline ( r: *Reflector, sizeBytes: s64 )
+{
+    bytesToSkip := min( sizeBytes, r.buffer.count - r.bufferHead );
+    r.bufferHead += bytesToSkip;
+}
+
+SetBufferHead :: inline ( r: *Reflector, offsetBytes: s64 )
+{
+    newOffset := min( offsetBytes, r.buffer.count );
+    r.bufferHead = newOffset;
+}
 
 #scope_module
 

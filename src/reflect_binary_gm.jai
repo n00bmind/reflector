@@ -30,34 +30,6 @@ BinaryWriterGM :: struct
 
 #scope_file
 
-// Always ensure we're not trying to read past the end of the buffer
-// If you call this with an exhausted buffer, no copy will occur
-Read :: inline ( using r: *BinaryReaderGM, d: *$T )
-{
-    bytesToCopy := min( size_of(T), buffer.count - r.bufferHead );
-    Copy( buffer.data + r.bufferHead, d, bytesToCopy );
-}
-
-Read :: inline ( using r: *BinaryReaderGM, d: *$T, offset: s64 )
-{
-    bytesToCopy := min( size_of(T), buffer.count - offset );
-    Copy( buffer.data + offset, d, bytesToCopy );
-}
-
-ReadAndAdvance :: inline ( using r: *BinaryReaderGM, d: *$T )
-{
-    bytesToCopy := min( size_of(T), buffer.count - bufferHead );
-    Copy( buffer.data + bufferHead, d, bytesToCopy );
-    bufferHead += bytesToCopy;
-}
-
-ReadAndAdvance :: inline ( using r: *BinaryReaderGM, d: [] u8 )
-{
-    bytesToCopy := min( d.count, buffer.count - bufferHead );
-    Copy( buffer.data + bufferHead, d.data, bytesToCopy );
-    bufferHead += bytesToCopy;
-}
-
 
 BinaryTypeInfo :: struct
 {
@@ -102,7 +74,7 @@ BeginReflectType :: ( info: *BinaryTypeInfo, type: Type, r: *BinaryReflectorGM )
     else
     {
         info.type = type;
-        info.startOffset = r.buffer.size;
+        info.startOffset = r.buffer.count;
 
         // Make space to write a header at the very end
         PushEmpty( *r.buffer, info.HeaderSize );
@@ -123,7 +95,7 @@ EndReflectType :: ( info: *BinaryTypeInfo, r: *BinaryReflectorGM )
     else
     {
         // Finish packed header and write it
-        info.totalSize = r.buffer.size - info.startOffset;
+        info.totalSize = r.buffer.count - info.startOffset;
         if info.totalSize > info.TotalSizeMax
         {
             log_error( "Serialized size of type % does not fit in % bits!", info.type, info.TotalSizeBits );
@@ -203,7 +175,7 @@ BeginReflectField :: ( fieldId: u16, name: string, offsetFromParent: s64, info: 
 
         info.fieldCount += 1;
         info.currentFieldName = name;
-        info.currentFieldStartOffset = r.buffer.size;
+        info.currentFieldStartOffset = r.buffer.count;
         // Field headers are packed similar to type headers
         // TODO This is really wasteful. Replace with a separate offsets table per type (check flatbuffers format?)
         // Push a 0 placeholder for the field size (will be computed in EndReflectField)
@@ -224,7 +196,7 @@ EndReflectField :: ( fieldId: u16, info: *BinaryTypeInfo, r: *BinaryReflectorGM 
     else
     {
         // Write serialised field size at the correct placeholder offset
-        fieldSize := r.buffer.size - info.currentFieldStartOffset;
+        fieldSize := r.buffer.count - info.currentFieldStartOffset;
         if fieldSize > info.TotalSizeMax
         {
             log_error( "Serialized field '%' does not fit in % bits!", info.currentFieldName, info.TotalSizeBits );
@@ -250,48 +222,6 @@ ReflectRawBytes :: inline ( d: [] u8, r: *BinaryReflectorGM )
         Push( *r.buffer, d );
     }
 }
-
-IsPrimitiveType :: inline ( ti: *Type_Info ) -> bool
-{
-    // TODO We probably want to be able to do something more sophisticated for enums
-    return ti.type == .INTEGER || ti.type == .FLOAT || ti.type == .BOOL || ti.type == .ENUM;
-}
-IsPrimitiveType :: inline ( $T: Type ) -> bool
-{
-    return IsPrimitiveType( cast(*Type_Info) T );
-}
-
-// TODO We should be able to make these 'constexpr/eval' functions, but how does one do that in Jai?
-// May be a good Q for the next Q&A
-IsArrayType :: inline ( $T: Type ) -> bool
-{
-    ti := cast(*Type_Info) T;
-    return ti.type == .ARRAY || ti.type == .STRING;
-}
-
-IsFixedArrayType :: inline ( $T: Type ) -> bool
-{
-    ti := cast(*Type_Info) T;
-    if ti.type != .ARRAY
-        return false;
-    tia := cast(*Type_Info_Array) T;
-    return tia.array_type == .FIXED;
-}
-
-IsPrimitiveArrayType :: inline ( $T : Type ) -> bool
-{
-    ti := cast(*Type_Info) T;
-
-    if ti.type == .STRING
-        return true;
-
-    if ti.type != .ARRAY
-        return false;
-
-    tia := cast(*Type_Info_Array) ti;
-    return IsPrimitiveType( tia.element_type );
-}
-
 
 ReflectPacked :: inline ( d: *$T/interface struct {}, r: *BinaryReflectorGM ) -> ReflectResult
 {
@@ -331,6 +261,7 @@ Reflect :: inline ( d: *$T, r: *BinaryReflectorGM ) -> ReflectResult #expand
 // from reflect.jai from a Reflect() overload with a #modify block like the one just above
 // TODO Problem is, this calls into Reflect() again and so this code needs to also be injected into the user app global namespace
 {
+    // TODO We probably want to be able to do something more sophisticated for enums
     #if #run IsPrimitiveType( T )
     {
         // Just read/write the raw bytes
@@ -363,6 +294,7 @@ Reflect :: inline ( d: *$T, r: *BinaryReflectorGM ) -> ReflectResult #expand
                 // TODO Do we want to be more fault tolerant here?
                 if count != tia.array_count
                     return .BadData;
+                assert( d.count == count );
             }
             else
             {

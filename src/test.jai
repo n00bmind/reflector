@@ -42,7 +42,7 @@ TestBinarySerializer :: ( name: string, $Reader: Type, $Writer: Type )
     #if type_info( type_of( writer.buffer ) ).type == .ARRAY
         print( "Wrote % bytes\n", writer.buffer.count );
     else
-        print( "Wrote % bytes\n", writer.buffer.size );
+        print( "Wrote % bytes\n", writer.buffer.count );
 
     reader: Reader;
     #if type_info( type_of( writer.buffer ) ).type == .ARRAY

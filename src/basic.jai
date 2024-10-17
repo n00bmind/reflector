@@ -15,7 +15,7 @@ offset_of :: ( $T: Type, memberName: string ) -> s64
     return -1;
 }
 
-bytes_of :: ( v: *$T ) -> [] u8
+bytes_of :: inline ( v: *$T ) -> [] u8
 {
     result: [] u8;
     result.data = cast(*u8) v;
@@ -52,24 +52,24 @@ GetMemberValueAs :: inline ( m: *Type_Info_Struct_Member, d: *void, $M: Type ) -
 
 ///// Arrays
 // TODO Allocators
-Init :: ( a: *[] $T, count: s64, $initialized := true )
+Init :: inline ( a: *[] $T, count: s64, $initialized := true )
 {
     array, _ = NewArray( count, T, initialized );
     <<a = array;
 }
 
-Init :: ( a: *[..] $T, capacity: s64 )
+Init :: inline ( a: *[..] $T, capacity: s64 )
 {
     array_reserve( a, capacity );
 }
 
-Reset :: ( a: *[] $T, count: s64, $initialized := true )
+Reset :: inline ( a: *[] $T, count: s64, $initialized := true )
 {
     // NOTE I dont see this doing any copies, so presumably it's assumed that realloc does that if required?
     array_resize( a, count, initialized );
 }
 
-Reset :: ( a: *[..] $T, count: s64, $initialized := true )
+Reset :: inline ( a: *[..] $T, count: s64, $initialized := true )
 {
     // NOTE I dont see this doing any copies, so presumably it's assumed that realloc does that if required?
     array_resize( a, count, initialized );
@@ -85,39 +85,39 @@ Contains :: ( array: [] $T, value: T ) -> bool
     return false;
 }
 
-Last :: ( array: [..] $T ) -> *T
+Last :: inline ( array: [..] $T ) -> *T
 {
     return ifx array.count > 0 then *array[array.count - 1] else null;
 }
 
-Push :: ( array: *[..] $T ) -> *T
+Push :: inline ( array: *[..] $T ) -> *T
 {
     return array_add( array );
 }
 
-Push :: ( array: *[..] $T, item: T )
+Push :: inline ( array: *[..] $T, item: T )
 {
     array_add( array, item );
 }
 
-Push :: ( array: *Bucket_Array( $T, $N ) ) -> *T
+Push :: inline ( array: *Bucket_Array( $T, $N ) ) -> *T
 {
     pointer, locator := find_and_occupy_empty_slot( array, initialize=true );
     return pointer;
 }
 
-PushEmpty :: ( array: *[..] $T, count: s64 )
+PushEmpty :: inline ( array: *[..] $T, count: s64 )
 {
     array_resize( array, array.count + count );
 }
 
-PushEmpty :: ( array: *Bucket_Array, count: s64 )
+PushEmpty :: inline ( array: *Bucket_Array, count: s64 )
 {
     for 1..count
         find_and_occupy_empty_slot( array, initialize=true );
 }
 
-Pop :: ( array: *[..] $T, out: *T )
+Pop :: inline ( array: *[..] $T, out: *T )
 {
     <<out = (<<array)[array.count - 1];
     array.count -= 1;
@@ -169,3 +169,4 @@ ReportError :: ( loc: Source_Code_Location, fmt: string, args: .. Any )
     finalFmt := tprint( "[Reflector] ERROR: %:\n > %", loc, fmt );
     log( finalFmt, ..args, loc = loc, flags = .ERROR );
 } @PrintLike
+
