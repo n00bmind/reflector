@@ -131,6 +131,7 @@ Reflect :: ( d: *$T, r: *BinaryReflector ) -> ReflectResult
             ReadAndAdvance( r, *fieldCount );
             ReadAndAdvance( r, *maxFieldId );
 
+            // TODO Allocate temp memory in big chunks and just grab from there
             idTable := []u16.{ fieldCount, talloc( fieldCount * size_of(u16) ) };
             // Read whole table in one go
             ReadAndAdvance( r, idTable );
@@ -175,7 +176,7 @@ Reflect :: ( d: *$T, r: *BinaryReflector ) -> ReflectResult
 // TODO Add flags that govern whether strings, arrays and pointers to data are:
 // - Serialised in-line or out
 // - Allocated in place when reading or point to the loaded buffer's contents
-Reflect :: inline ( d: *$T, r: *BinaryReflector ) -> ReflectResult #expand
+Reflect :: inline ( d: *$T, r: *BinaryReflector ) -> ReflectResult
 #modify
 {
     ti := cast(*Type_Info) T;

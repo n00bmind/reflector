@@ -10,10 +10,10 @@
 main :: ()
 {
     BenchmarkBinaryReader( "Signature", BinaryReader, BinaryWriter );
-    print( "\n\n___________\n\n" );
-    BenchmarkBinaryReader( "Glowmade", BinaryReaderGM, BinaryWriterGM );
-    print( "\n\n___________\n\n" );
-    BenchmarkBinaryReader( "Flatbuffers", BinaryReaderFB, BinaryWriterFB );
+    // print( "\n\n___________\n\n" );
+    // BenchmarkBinaryReader( "Glowmade", BinaryReaderGM, BinaryWriterGM );
+    // print( "\n\n___________\n\n" );
+    // BenchmarkBinaryReader( "Flatbuffers", BinaryReaderFB, BinaryWriterFB );
 }
 
 #scope_file
@@ -61,7 +61,8 @@ BenchmarkBinaryReader :: ( name: string, $Reader: Type, $Writer: Type )
     #if type_info( type_of( writer.buffer ) ).type == .ARRAY
         array := writer.buffer;
     else
-        array := ToArray( *writer.buffer );
+        array := ToArray( *writer.buffer, allocator = context.allocator );
+
     while BeginTestCycle( *tester )
     {
         reader2: Reader = .{ buffer = array };
@@ -70,6 +71,12 @@ BenchmarkBinaryReader :: ( name: string, $Reader: Type, $Writer: Type )
         Reflect( *readChunk, *reader2 );
         EndTime( *tester );
         CountBytes( *tester, reader2.buffer.count );
+
+        // TODO Something doesnt seem right.. adding this call slows down the benchmark, even though it's done outside of the timed zone
+        // You'd think that if anything, NOT resetting this would cause slow downs, since the allocator will be forced to eventually
+        // allocate new pages, and we'll have to pay the corresponding page faults for those, but no (!)
+        // So step through all this setup with the debugger, and try to integrate Tracy to add some instrumentation.
+        reset_temporary_storage();
     }
 }
 

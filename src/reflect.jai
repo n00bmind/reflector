@@ -330,6 +330,7 @@ Read :: inline ( r: *Reflector, d: *$T, offset: s64 )
     Copy( r.buffer.data + offset, d, bytesToCopy );
 }
 
+// TODO How can we make these faster
 ReadAndAdvance :: inline ( r: *Reflector, d: *$T )
 {
     bytesToCopy := min( size_of(T), r.buffer.count - r.bufferHead );
