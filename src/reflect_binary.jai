@@ -3,6 +3,8 @@ BinaryReflector :: struct( $IsReading2: bool )
 {
     #as using reflector: Reflector( BinaryTypeInfo, IsReading2, true );
 
+    // TODO Use this in all other reflectors for comparison, as well as for writing
+    heap: TempHeap;
     scopeDepth: s64;
 }
 
@@ -112,8 +114,11 @@ Reflect :: ( d: *$T, r: *BinaryReflector ) -> ReflectResult
     {
         crcOffset: u32;
         if r.scopeDepth == 0
+        {
+            Reset( *r.heap );
             // Leave a gap for the CRC blob offset
             ReadAndAdvance( r, *crcOffset );
+        }
 
         r.scopeDepth += 1;
 
@@ -132,12 +137,12 @@ Reflect :: ( d: *$T, r: *BinaryReflector ) -> ReflectResult
             ReadAndAdvance( r, *maxFieldId );
 
             // TODO Allocate temp memory in big chunks and just grab from there
-            idTable := []u16.{ fieldCount, talloc( fieldCount * size_of(u16) ) };
+            idTable := []u16.{ fieldCount, Alloc( *r.heap, fieldCount * size_of(u16) ) };
             // Read whole table in one go
             ReadAndAdvance( r, idTable );
 
             // Reconstruct contiguous offsets table, indexed by the field ids above
-            offsetTable := []u32.{ maxFieldId + 1, talloc( (maxFieldId + 1) * size_of(u32) ) };
+            offsetTable := []u32.{ maxFieldId + 1, Alloc( *r.heap, (maxFieldId + 1) * size_of(u32) ) };
             for id : idTable
             {
                 ReadAndAdvance( r, *offsetTable[id] );

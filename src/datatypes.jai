@@ -120,6 +120,45 @@ Reserve :: ( using buffer: *BufferBuilder, newCapacity: int )
     GrowPageBuffer( buffer, requiredPageCount );
 }
 
+
+TempHeap :: struct
+{
+    PageSize :: 1 * 1024 * 1024;
+    Page :: struct
+    {
+        base: *u8;
+        used: s64;
+    }
+
+    pages: [..] Page;
+}
+
+Reset :: ( using heap: *TempHeap )
+{
+    for * p: pages
+        p.used = 0;
+    array_resize( *pages, 0 );
+
+    Init( *pages, 8 );
+    AllocPage( heap );
+}
+
+Alloc :: ( using heap: *TempHeap, size: int ) -> *void
+{
+    curPage := *pages[ pages.count - 1 ];
+    available := TempHeap.PageSize - curPage.used;
+
+    if available < size
+        AllocPage( heap );
+
+    curPage = *pages[ pages.count - 1 ];
+    // TODO Alignment?
+    result := curPage.base + curPage.used;
+    curPage.used += size;
+
+    return result;
+}
+
 #scope_file
 
 GrowPageBuffer :: ( using buffer: *BufferBuilder, pageCount: int )
@@ -140,3 +179,13 @@ GrowPageBuffer :: ( using buffer: *BufferBuilder, pageCount: int )
     pages = newPages;
 }
 
+AllocPage :: ( using heap: *TempHeap )
+{
+    prevCount := pages.count;
+    array_resize( *pages, pages.count + 1 );
+
+    curPage := *pages[ prevCount ];
+    // Assume once we've called Reset() any existing page memory is now invalid
+    curPage.base = talloc( TempHeap.PageSize );
+    curPage.used = 0;
+}
