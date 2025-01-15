@@ -123,7 +123,7 @@ Reserve :: ( using buffer: *BufferBuilder, newCapacity: int )
 
 TempHeap :: struct
 {
-    PageSize :: 1 * 1024 * 1024;
+    PageSize :: 8 * 1024 * 1024;
     Page :: struct
     {
         base: *u8;

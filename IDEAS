@@ -73,6 +73,10 @@
      were allocated in
   Ofc, this will all require adequate profiling and optimization.
 
+- Acceleration trick to try: when deserialising a type, build its "vtable" in memory beforehand and hash it, and compare with the stored
+  vtable of the source type (just the hash first, then the full vtable if it matches). If they're identical, just read the entire
+  type in in one go.
+
 
 :: Refs
 
