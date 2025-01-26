@@ -4,56 +4,96 @@
 // - Uses a custom Reflect() overload
 
 #import "Basic";
+#import "Compiler";
+Print :: #import "Program_Print";
 // TODO We're inserting code that now requires the user to import stuff.. how do we deal with this?
 #import "Bucket_Array";
 
-// TODO Automate dependency downloading etc
+// TODO Remove dependencies!
 #import "bricks";
 #import "reflector";
 
+
+// Test files
 #load "tests/monster.jai";
+
 
 main :: ()
 {
-    TestBinarySerializer( "Glowmade", BinaryReaderGM, BinaryWriterGM );
-    print( "___________\n\n" );
-    TestBinarySerializer( "Flatbuffers", BinaryReaderFB, BinaryWriterFB );
-    print( "___________\n\n" );
-    TestBinarySerializer( "Signature", BinaryReader, BinaryWriter );
+    exitCode := RunAllTests();
+
+    exit( exitCode );
 }
+
+
+#scope_module
+
+Expect :: ( $expr: Code, loc := #caller_location ) #expand
+{
+    result: bool = #insert expr;
+
+    if !result
+    {
+        exprString : string : #insert -> string
+        {
+            nodes := compiler_get_nodes( expr );
+
+            builder: String_Builder;
+            print_to_builder( *builder, "\"" );
+            Print.print_expression( *builder, nodes );
+            print_to_builder( *builder, "\";" );
+
+            return builder_to_string(*builder);
+        };
+        context.testCase.failedExpr = exprString;
+        context.testCase.failedLocation = loc;
+        context.testCase.failed = true;
+        `return;
+    }
+}
+
 
 #scope_file
 
-TestBinarySerializer :: ( name: string, $Reader: Type, $Writer: Type )
+TestCase :: struct
 {
-    print( "___%___:\n", name );
+    name: string;
+    proc: #type ();
 
-    mA, mB: Monster;
-    mA.pos = .{ 1.0, 2.0, 3.0 };
-    array_add( *mA.inventory, 10 );
-    array_add( *mA.inventory, 20 );
-    array_add( *mA.inventory, 30 );
-    array_add( *mA.weapons, .{ "Hammer", 42 } );
-
-    writer: Writer;
-    result := Reflect( *mA, *writer );
-    print( "Writer result: %\n", result );
-    // Assume it's either a plain array or a BufferBuilder
-    #if type_info( type_of( writer.buffer ) ).type == .ARRAY
-        print( "Wrote % bytes\n", writer.buffer.count );
-    else
-        print( "Wrote % bytes\n", writer.buffer.count );
-
-    reader: Reader;
-    #if type_info( type_of( writer.buffer ) ).type == .ARRAY
-        reader.buffer = writer.buffer;
-    else
-        reader.buffer = ToArray( *writer.buffer );
-    print( "Reading % bytes\n", reader.buffer.count );
-    result = Reflect( *mB, *reader );
-    print( "Reader result: %\n", result );
-
-    equal := mA == mB;
-    print( "Reflected type is %\n", ifx equal "EQUAL" else "NOT EQUAL" );
+    failedExpr: string;
+    failedLocation: Source_Code_Location;
+    failed: bool = false;
 }
+#add_context testCase: *TestCase;
 
+#placeholder AllTests; // [] TestCase
+
+
+RunAllTests :: () -> s32
+{
+    failedCount: s32 = 0;
+
+    for t: AllTests
+    {
+        log( "Running %...", t.name );
+
+        newContext := context;
+        newContext.testCase = *t;
+        push_context newContext
+        {
+            t.proc();
+        }
+
+        // TODO Custom logger withouth NLs, terminal colors
+        if t.failed
+        {
+            log( "FAILED!\n" );
+            log( "%: Expression '%' evaluated as false.\n", t.failedLocation, t.failedExpr );
+            failedCount += 1;
+        }
+        else
+            log( "OK.\n" );
+    }
+
+    return failedCount;
+}

@@ -143,3 +143,51 @@ FooBar :: struct
     say: string;
     height: s16;
 }
+
+
+
+TestBinarySerializer :: ( name: string, $Reader: Type, $Writer: Type )
+{
+    mA, mB: Monster;
+    mA.pos = .{ 1.0, 2.0, 3.0 };
+    array_add( *mA.inventory, 10 );
+    array_add( *mA.inventory, 20 );
+    array_add( *mA.inventory, 30 );
+    array_add( *mA.weapons, .{ "Hammer", 42 } );
+
+    writer: Writer;
+    result := Reflect( *mA, *writer );
+    // TODO log_debug?
+    // log( "Writer result: %\n", result );
+    // Assume it's either a plain array or a BufferBuilder
+    // #if type_info( type_of( writer.buffer ) ).type == .ARRAY
+    //     log( "Wrote % bytes\n", writer.buffer.count );
+    // else
+    //     log( "Wrote % bytes\n", writer.buffer.count );
+
+    reader: Reader;
+    #if type_info( type_of( writer.buffer ) ).type == .ARRAY
+        reader.buffer = writer.buffer;
+    else
+        reader.buffer = ToArray( *writer.buffer );
+    // log( "Reading % bytes\n", reader.buffer.count );
+    result = Reflect( *mB, *reader );
+    // log( "Reader result: %\n", result );
+
+    // Expect( mA == mB );
+    Expect( mA == .{} );
+}
+
+TestGMSerializer :: ()
+{
+    TestBinarySerializer( "Glowmade", BinaryReaderGM, BinaryWriterGM );
+} @test
+TestFBSerializer :: ()
+{
+    TestBinarySerializer( "Flatbuffers", BinaryReaderFB, BinaryWriterFB );
+} @test
+TestCustomSerializer :: ()
+{
+    TestBinarySerializer( "Custom", BinaryReader, BinaryWriter );
+} @test
+

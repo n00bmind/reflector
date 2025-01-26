@@ -61,14 +61,14 @@ build :: ()
         set_build_options( options, w );
 
         // I assume this must happen before we add files to the compilation?
-        // compiler_begin_intercept( w );
+        compiler_begin_intercept( w );
 
         Reflector.AddSourceStubs( w );
         add_build_file( "src/test.jai", w );
 
-        // MessageLoop( w );
+        MessageLoop( w );
 
-        // compiler_end_intercept(w);
+        compiler_end_intercept(w);
     }
 
     // Benchmark executable
@@ -105,7 +105,7 @@ build :: ()
 #run build();
 
 
-#if 0
+#if 1
 {
 
 #scope_file
@@ -114,36 +114,39 @@ build :: ()
 // I dont think most of this crap is needed
 // Test everything out with this removed..
 
-EmitStructCodeNodes :: true;
+EmitStructCodeNodes :: false;
 PrintDebugLogs :: false;
 
 
-TryEmitNodeFor :: ( st: *Type_Info_Struct, w: Workspace ) -> bool
+#if 0
 {
-    // Do we have it yet
-    node, nodeFound := table_find( *globalStructNodes, st );
-    if nodeFound
+    TryEmitNodeFor :: ( st: *Type_Info_Struct, w: Workspace ) -> bool
     {
-        // TODO Seems like we dont even need the placeholder!
-        // Add a placeholder with a unique name for this Type_Info pointer
-        // The relevant Reflect() function will know to look for it
-        //str := tprint( "#placeholder _struct_node_%;\n", st );
-        //add_build_string( str, w ); //, code = REFLECT_MODULE_SCOPE );
-
-        str := tprint( "% :: cast(*Code_Struct) 0x%;\n", StructNodeIdentFor( st, false ), node );
-        add_build_string( str, w ); //, code = REFLECT_MODULE_SCOPE );
-
-        // Also add it to the list to emit them all at the end as an array
-        array_add( *globalNodesTable, node );
-
-        #if PrintDebugLogs
+        // Do we have it yet
+        node, nodeFound := table_find( *globalStructNodes, st );
+        if nodeFound
         {
-            print( "##### Emitted node for %\n", st.name );
-        }
+            // TODO Seems like we dont even need the placeholder!
+            // Add a placeholder with a unique name for this Type_Info pointer
+            // The relevant Reflect() function will know to look for it
+            //str := tprint( "#placeholder _struct_node_%;\n", st );
+            //add_build_string( str, w ); //, code = REFLECT_MODULE_SCOPE );
 
-        return true;
+            str := tprint( "% :: cast(*Code_Struct) 0x%;\n", StructNodeIdentFor( st, false ), node );
+            add_build_string( str, w ); //, code = REFLECT_MODULE_SCOPE );
+
+            // Also add it to the list to emit them all at the end as an array
+            array_add( *globalNodesTable, node );
+
+            #if PrintDebugLogs
+            {
+                print( "##### Emitted node for %\n", st.name );
+            }
+
+            return true;
+        }
+        return false;
     }
-    return false;
 }
 
 MessageLoop :: ( w: Workspace )
@@ -153,12 +156,36 @@ MessageLoop :: ( w: Workspace )
         message := compiler_wait_for_message();
         if message.kind ==
         {
+        case .FILE;
+            file := cast(*Message_File) message;
+            // Pretty janky
+            // Why oh why can't you refer to specific placeholders by name when calling add_build_string!?
+            if file.fully_pathed_filename == tprint( "%src/test.jai", #filepath )
+                globalMainTestFile = file;
+
         case .TYPECHECKED;
             typechecked := cast(*Message_Typechecked) message;
             #if PrintDebugLogs
             {
                 print( "# Got msg TYPECHECKED (% things: % headers, % bodies, % structs)\n", typechecked.all.count,
                        typechecked.procedure_headers.count, typechecked.procedure_bodies.count, typechecked.structs.count );
+            }
+
+            for tc: typechecked.procedure_headers
+            {
+                proc := tc.expression;
+
+                // Skip procs that are imported from somewhere
+                if proc.enclosing_load {
+                    if proc.enclosing_load.enclosing_import.module_type != .MAIN_PROGRAM
+                        continue;
+                }
+
+                // If it is a procedure we want to test, make note of it for later.
+                if HasNote( proc, "test" )
+                {
+                    array_add( *globalTests, proc );
+                }
             }
 
             #if EmitStructCodeNodes
@@ -230,6 +257,24 @@ MessageLoop :: ( w: Workspace )
                         print( "# Got msg TYPECHECKED_ALL_WE_CAN (% waiting)\n", phase.num_items_waiting_to_typecheck );
                     }
 
+                    // Emit all tests we've found until now
+                    if !globalEmittedTestsTable
+                    {
+                        // Emit all struct nodes as a constant array
+                        print_to_builder( *globalBuilder, "AllTests: [%] TestCase = .[\n", globalTests.count );
+
+                        for globalTests
+                            print_to_builder( *globalBuilder, "    .{ name = \"%\", proc = % },\n", it.name, it.name );
+
+                        append( *globalBuilder, "];\n" );
+
+                        add_build_string( builder_to_string( *globalBuilder ), w, message = globalMainTestFile );
+                        free_buffers( *globalBuilder );
+                        array_reset( *globalTests );
+
+                        globalEmittedTestsTable = true;
+                    }
+
                     #if EmitStructCodeNodes
                     {
                         // Continue trying to emit any nodes we haven't yet emitted
@@ -296,7 +341,7 @@ HasNote :: (header: *Code_Struct, note: string) -> bool {
     return false;
 }
 
-HasNote :: ( header: *Code_Procedure_Header, note: string, args: *string ) -> bool
+HasNote :: ( header: *Code_Procedure_Header, note: string, args: *string = null ) -> bool
 {
     for header.notes
     {
@@ -328,3 +373,7 @@ globalRunners: [..] *Code_Procedure_Header;
 globalRunnerArgs: [..] string;
 
 }
+
+globalMainTestFile: *Message;
+globalTests: [..] *Code_Procedure_Header;
+globalEmittedTestsTable: bool = false;
