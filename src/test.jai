@@ -16,6 +16,7 @@ Print :: #import "Program_Print";
 
 // Test files
 #load "tests/monster.jai";
+// #load "tests/nested.jai";
 
 
 main :: ()

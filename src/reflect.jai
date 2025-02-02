@@ -1,4 +1,74 @@
 
+DeepEquals :: ( a: Any, b: Any ) -> bool
+{
+    return DeepEqualsInternal( cast(*Any_Struct) *a, cast(*Any_Struct) *b );
+}
+
+DeepEqualsInternal :: ( a: *Any_Struct, b: *Any_Struct ) -> bool
+{
+    if a.type != b.type
+        return false;
+
+    result := true;
+    if a.type.type ==
+    {
+        case .STRUCT;
+        {
+            aType := cast(*Type_Info_Struct) a.type;
+            for aType.members
+            {
+                aIt := Any_Struct.{ it.type, a.value_pointer + it.offset_in_bytes };
+                bIt := Any_Struct.{ it.type, b.value_pointer + it.offset_in_bytes };
+                result &&= DeepEqualsInternal( *aIt, *bIt );
+            }
+        }
+        case .ARRAY;
+        {
+            aType := cast(*Type_Info_Array) a.type;
+            itType := aType.element_type;
+
+            aBase, bBase: *void = null;
+            count: s64 = 0;
+            if aType.array_type ==
+            {
+                case .FIXED;
+                    aBase = a.value_pointer;
+                    bBase = b.value_pointer;
+                    count = aType.array_count;
+                case .VIEW;
+                    aArray := cast(*Array_View_64) a.value_pointer;
+                    bArray := cast(*Array_View_64) b.value_pointer;
+                    aBase = aArray.data;
+                    bBase = bArray.data;
+                    count = aArray.count;
+                case .RESIZABLE;
+                    aArray := cast(*Resizable_Array) a.value_pointer;
+                    bArray := cast(*Resizable_Array) b.value_pointer;
+                    aBase = aArray.data;
+                    bBase = bArray.data;
+                    count = aArray.count;
+            }
+
+            for idx: 0 .. count - 1
+            {
+                aIt := Any_Struct.{ itType, aBase + idx * itType.runtime_size };
+                bIt := Any_Struct.{ itType, bBase + idx * itType.runtime_size };
+                result &&= DeepEqualsInternal( *aIt, *bIt );
+            }
+        }
+        case;
+        {
+            // Simply memcmp their bytes
+            result = memcmp( a.value_pointer, b.value_pointer, a.type.runtime_size ) == 0;
+        }
+    }
+
+    return result;
+}
+
+
+// TODO Most of this stuff can surely be module scope?
+
 // TODO Turn polymorph args into ReflectorFlags, most likely
 Reflector :: struct (ReflectedTypeInfo: $T, $IsReading: bool, $SupportsPackedTypes: bool = false)
 {

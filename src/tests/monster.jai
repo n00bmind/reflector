@@ -146,7 +146,7 @@ FooBar :: struct
 
 
 
-TestBinarySerializer :: ( name: string, $Reader: Type, $Writer: Type )
+TestBinaryMonster :: ( name: string, $Reader: Type, $Writer: Type )
 {
     mA, mB: Monster;
     mA.pos = .{ 1.0, 2.0, 3.0 };
@@ -175,19 +175,19 @@ TestBinarySerializer :: ( name: string, $Reader: Type, $Writer: Type )
     // log( "Reader result: %\n", result );
 
     // Expect( mA == mB );
-    Expect( mA == .{} );
+    Expect( DeepEquals( mA, mB ) );
 }
 
-TestGMSerializer :: ()
+TestMonsterGM :: ()
 {
-    TestBinarySerializer( "Glowmade", BinaryReaderGM, BinaryWriterGM );
+    TestBinaryMonster( "Glowmade", BinaryReaderGM, BinaryWriterGM );
 } @test
-TestFBSerializer :: ()
+TestMonsterFB :: ()
 {
-    TestBinarySerializer( "Flatbuffers", BinaryReaderFB, BinaryWriterFB );
+    TestBinaryMonster( "Flatbuffers", BinaryReaderFB, BinaryWriterFB );
 } @test
-TestCustomSerializer :: ()
+TestMonsterCustom :: ()
 {
-    TestBinarySerializer( "Custom", BinaryReader, BinaryWriter );
+    TestBinaryMonster( "Custom", BinaryReader, BinaryWriter );
 } @test
 

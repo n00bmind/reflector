@@ -6,6 +6,8 @@
 #import "bricks";
 #import "reflector";
 
+#load "tests/nested.jai";
+
 
 main :: ()
 {
@@ -78,35 +80,5 @@ BenchmarkBinaryReader :: ( name: string, $Reader: Type, $Writer: Type )
         // So step through all this setup with the debugger, and try to integrate Tracy to add some instrumentation.
         reset_temporary_storage();
     }
-}
-
-
-SimpleType :: struct
-{
-    num: s32;
-}
-
-ComplexType :: struct
-{
-    simple: SimpleType;
-    nums: [] s32;
-    str: string;
-}
-
-DeepType :: struct
-{
-    complex: ComplexType;
-    n: s32;
-}
-
-DeeperType :: struct
-{
-    deep: DeepType;
-    someText: string;
-}
-
-ChunkyType :: struct
-{
-    deeper: [..] DeeperType;
 }
 
