@@ -1,15 +1,40 @@
 
 DeepEquals :: ( a: Any, b: Any ) -> bool
 {
-    return DeepEqualsInternal( cast(*Any_Struct) *a, cast(*Any_Struct) *b );
+    errorStr: String_Builder;
+    errorStr.allocator = temp;
+
+    // TODO Would like to print the type name here
+    // scope := a.type.name;
+    result := DeepEqualsInternal( cast(*Any_Struct) *a, cast(*Any_Struct) *b, "<root>", *errorStr );
+    if !result
+    {
+        // TODO log_debug
+        log( "%\n", builder_to_string( *errorStr ) );
+        free_buffers( *errorStr );
+    }
+    return result;
 }
 
-DeepEqualsInternal :: ( a: *Any_Struct, b: *Any_Struct ) -> bool
+DeepEqualsInternal :: ( a: *Any_Struct, b: *Any_Struct, scope: string, errorStr: *String_Builder ) -> bool
 {
     if a.type != b.type
+    {
+        print_to_builder( errorStr, ".type - Types differ (a is %, b is %)", a.type, b.type );
         return false;
+    }
 
-    result := true;
+    builderState: struct
+    {
+        currentBuffer: *String_Builder.Buffer;
+        currentBufferCount: s64;
+    }
+    // Save current state in the stack
+    builderState.currentBuffer = get_current_buffer( errorStr );
+    builderState.currentBufferCount = builderState.currentBuffer.count;
+
+    append( errorStr, scope );
+
     if a.type.type ==
     {
         case .STRUCT;
@@ -19,51 +44,87 @@ DeepEqualsInternal :: ( a: *Any_Struct, b: *Any_Struct ) -> bool
             {
                 aIt := Any_Struct.{ it.type, a.value_pointer + it.offset_in_bytes };
                 bIt := Any_Struct.{ it.type, b.value_pointer + it.offset_in_bytes };
-                result &&= DeepEqualsInternal( *aIt, *bIt );
+
+                scope := tprint( ".%", it.name );
+                result := DeepEqualsInternal( *aIt, *bIt, scope, errorStr );
+                if !result
+                    return false;
             }
         }
         case .ARRAY;
         {
             aType := cast(*Type_Info_Array) a.type;
+            bType := cast(*Type_Info_Array) b.type;
             itType := aType.element_type;
 
             aBase, bBase: *void = null;
-            count: s64 = 0;
+            aCount, bCount: s64 = 0;
             if aType.array_type ==
             {
                 case .FIXED;
                     aBase = a.value_pointer;
                     bBase = b.value_pointer;
-                    count = aType.array_count;
+                    aCount = aType.array_count;
+                    bCount = bType.array_count;
                 case .VIEW;
                     aArray := cast(*Array_View_64) a.value_pointer;
                     bArray := cast(*Array_View_64) b.value_pointer;
                     aBase = aArray.data;
                     bBase = bArray.data;
-                    count = aArray.count;
+                    aCount = aArray.count;
+                    bCount = bArray.count;
                 case .RESIZABLE;
                     aArray := cast(*Resizable_Array) a.value_pointer;
                     bArray := cast(*Resizable_Array) b.value_pointer;
                     aBase = aArray.data;
                     bBase = bArray.data;
-                    count = aArray.count;
+                    aCount = aArray.count;
+                    bCount = bArray.count;
             }
 
-            for idx: 0 .. count - 1
+            if aCount != bCount
+            {
+                print_to_builder( errorStr, ".count - Counts differ (a is %, b is %)", aCount, bCount );
+                return false;
+            }
+            for idx: 0 .. aCount - 1
             {
                 aIt := Any_Struct.{ itType, aBase + idx * itType.runtime_size };
                 bIt := Any_Struct.{ itType, bBase + idx * itType.runtime_size };
-                result &&= DeepEqualsInternal( *aIt, *bIt );
+                scope := tprint( ".[%]", idx );
+                result := DeepEqualsInternal( *aIt, *bIt, scope, errorStr );
+                if !result
+                    return false;
+            }
+        }
+        case .STRING;
+        {
+            aString := cast(*string) a.value_pointer;
+            bString := cast(*string) b.value_pointer;
+            result := <<aString == <<bString;
+            if !result
+            {
+                print_to_builder( errorStr, " - Strings differ (a is '%', b is '%')", <<aString, <<bString );
+                return false;
             }
         }
         case;
         {
             // Simply memcmp their bytes
-            result = memcmp( a.value_pointer, b.value_pointer, a.type.runtime_size ) == 0;
+            result := memcmp( a.value_pointer, b.value_pointer, a.type.runtime_size ) == 0;
+            if !result
+            {
+                print_to_builder( errorStr, " - Bit contents differ (compared % bytes)", a.type.runtime_size );
+                return false;
+            }
         }
     }
 
-    return result;
+    // Rewind current error path by restoring the builder's state
+    errorStr.current_buffer = builderState.currentBuffer;
+    errorStr.current_buffer.count = builderState.currentBufferCount;
+
+    return true;
 }
 
 

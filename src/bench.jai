@@ -6,7 +6,7 @@
 #import "bricks";
 #import "reflector";
 
-#load "tests/nested.jai";
+#load "tests/nested_type.jai";
 
 
 main :: ()
