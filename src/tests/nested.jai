@@ -15,14 +15,15 @@ TestBinaryNestedType :: ( name: string, $Reader: Type, $Writer: Type )
         array_add( *writtenChunk.deeper, deeper );
 
     writer: Writer;
-    result := Reflect( *writtenChunk, *writer );
-    // TODO log_debug?
-    // log( "Writer result: %\n", result );
+    writeResult := Reflect( *writtenChunk, *writer );
     // Assume it's either a plain array or a BufferBuilder
-    // #if type_info( type_of( writer.buffer ) ).type == .ARRAY
-    //     log( "Wrote % bytes\n", writer.buffer.count );
-    // else
-    //     log( "Wrote % bytes\n", writer.buffer.count );
+    #if type_info( type_of( writer.buffer ) ).type == .ARRAY
+        log( "Wrote % bytes\n", writer.buffer.count );
+    else
+        log( "Wrote % bytes\n", writer.buffer.count );
+
+    log( "Writer result: %\n", writeResult );
+    Expect( writeResult == .Ok );
 
     readChunk: ChunkyType;
     reader: Reader;
@@ -30,9 +31,11 @@ TestBinaryNestedType :: ( name: string, $Reader: Type, $Writer: Type )
         reader.buffer = writer.buffer;
     else
         reader.buffer = ToArray( *writer.buffer );
-    // log( "Reading % bytes\n", reader.buffer.count );
-    result = Reflect( *readChunk, *reader );
-    // log( "Reader result: %\n", result );
+    log( "Reading % bytes\n", reader.buffer.count );
+    readResult := Reflect( *readChunk, *reader );
+
+    log( "Reader result: %\n", readResult );
+    Expect( readResult == .Ok );
 
     Expect( DeepEquals( readChunk, writtenChunk ) );
 }

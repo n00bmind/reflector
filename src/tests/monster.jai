@@ -66,23 +66,29 @@ TestBinaryMonster :: ( name: string, $Reader: Type, $Writer: Type )
     array_add( *mA.weapons, .{ "Hammer", 42 } );
 
     writer: Writer;
-    result := Reflect( *mA, *writer );
-    // TODO log_debug?
-    // log( "Writer result: %\n", result );
+    writeResult := Reflect( *mA, *writer );
     // Assume it's either a plain array or a BufferBuilder
-    // #if type_info( type_of( writer.buffer ) ).type == .ARRAY
-    //     log( "Wrote % bytes\n", writer.buffer.count );
-    // else
-    //     log( "Wrote % bytes\n", writer.buffer.count );
+    #if type_info( type_of( writer.buffer ) ).type == .ARRAY
+        log( "Wrote % bytes\n", writer.buffer.count );
+    else
+        log( "Wrote % bytes\n", writer.buffer.count );
+
+    log( "Writer result: %\n", writeResult );
+    Expect( writeResult == .Ok );
 
     reader: Reader;
     #if type_info( type_of( writer.buffer ) ).type == .ARRAY
         reader.buffer = writer.buffer;
     else
         reader.buffer = ToArray( *writer.buffer );
-    // log( "Reading % bytes\n", reader.buffer.count );
-    result = Reflect( *mB, *reader );
-    // log( "Reader result: %\n", result );
+    log( "Reading % bytes\n", reader.buffer.count );
+    readResult := Reflect( *mB, *reader );
+
+    // TODO Remove!
+    mB.mana = 666;
+
+    log( "Reader result: %\n", readResult );
+    Expect( readResult == .Ok );
 
     Expect( DeepEquals( mA, mB ) );
 }
@@ -95,7 +101,7 @@ TestMonsterFB :: ()
 {
     TestBinaryMonster( "Flatbuffers", BinaryReaderFB, BinaryWriterFB );
 } @test
-TestMonsterCustom :: ()
+TestMonsterCustomWithAVeryVeryLongNameYoWasssup :: ()
 {
     TestBinaryMonster( "Custom", BinaryReader, BinaryWriter );
 } @test

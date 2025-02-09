@@ -4,12 +4,11 @@ DeepEquals :: ( a: Any, b: Any ) -> bool
     errorStr: String_Builder;
     errorStr.allocator = temp;
 
-    // TODO Would like to print the type name here
-    // scope := a.type.name;
-    result := DeepEqualsInternal( cast(*Any_Struct) *a, cast(*Any_Struct) *b, "<root>", *errorStr );
+    print_type_to_builder( *errorStr, a.type );
+
+    result := DeepEqualsInternal( cast(*Any_Struct) *a, cast(*Any_Struct) *b, "", *errorStr );
     if !result
     {
-        // TODO log_debug
         log( "%\n", builder_to_string( *errorStr ) );
         free_buffers( *errorStr );
     }
@@ -20,7 +19,7 @@ DeepEqualsInternal :: ( a: *Any_Struct, b: *Any_Struct, scope: string, errorStr:
 {
     if a.type != b.type
     {
-        print_to_builder( errorStr, ".type - Types differ (a is %, b is %)", a.type, b.type );
+        print_to_builder( errorStr, " - Types differ (a is %, b is %)", a.type, b.type );
         return false;
     }
 
@@ -84,7 +83,7 @@ DeepEqualsInternal :: ( a: *Any_Struct, b: *Any_Struct, scope: string, errorStr:
 
             if aCount != bCount
             {
-                print_to_builder( errorStr, ".count - Counts differ (a is %, b is %)", aCount, bCount );
+                print_to_builder( errorStr, " - Array counts differ (a is %, b is %)", aCount, bCount );
                 return false;
             }
             for idx: 0 .. aCount - 1
@@ -114,7 +113,11 @@ DeepEqualsInternal :: ( a: *Any_Struct, b: *Any_Struct, scope: string, errorStr:
             result := memcmp( a.value_pointer, b.value_pointer, a.type.runtime_size ) == 0;
             if !result
             {
-                print_to_builder( errorStr, " - Bit contents differ (compared % bytes)", a.type.runtime_size );
+                append( errorStr, " - Contents differ (a is <" );
+                print_item_to_builder( errorStr, <<cast(*Any)a, false );
+                append( errorStr, ">, b is <" );
+                print_item_to_builder( errorStr, <<cast(*Any)b, false );
+                append( errorStr, ">)" );
                 return false;
             }
         }

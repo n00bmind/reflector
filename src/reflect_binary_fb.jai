@@ -332,7 +332,7 @@ Reflect :: ( d: *$T/interface struct {}, r: *BinaryWriterFB ) -> ReflectResult
     if result != .Ok
         return result;
 
-    print( "##### Measured buffer size: %\n", r.measuredBufferSize );
+    log( "Measured buffer size: %\n", r.measuredBufferSize );
     r.buffer = NewArray( r.measuredBufferSize, u8 );
     r.bufferHead = r.buffer.count;
 
