@@ -116,17 +116,17 @@ RunAllTests :: () -> s32
             print_color("OK.\n", color = .GREEN);
         }
 
-        // TODO Greyed out colorrr, but still log!
         if t.msgBuffer.initialized && context.log_level >= .VERBOSE
         {
-            // log( builder_to_string( *t.msgBuffer ), flags = .VERBOSE_ONLY );
-            print_color( builder_to_string( *t.msgBuffer ), color = .HI_BLACK );
+            // TODO Can this be a bit less contrast still?
+            log( builder_to_string( *t.msgBuffer ), flags = .VERBOSE_ONLY );
         }
 
         if t.failed
-            log_error( "%: Expression '%' evaluated as false.\n", t.failedLocation, t.failedExpr );
+            // TODO Want to also log this (but not print the line twice!)
+            print_color( "%: Expression '%' evaluated as false.\n", t.failedLocation, t.failedExpr, color = .HI_WHITE );
 
-        // TODO Clear temp memory
+        reset_temporary_storage();
     }
 
     // TODO Summary
@@ -137,9 +137,8 @@ RunAllTests :: () -> s32
 PrintAndIndent :: ( fmt: string, args: ..Any )
 {
     msg := tprint( fmt, ..args );
-    // TODO Should prolly leave the boldness for the summary!
-    // print_color( msg, color = .HI_WHITE, style = .BOLD );
-    print_color( msg, color = .WHITE );
+    // TODO Want to also log this (but not print the line twice!)
+    print_color( msg, color = .HI_WHITE );
 
     Spaces16 :: "                ";
     IndentCol :: 70;

@@ -84,9 +84,6 @@ TestBinaryMonster :: ( name: string, $Reader: Type, $Writer: Type )
     log( "Reading % bytes\n", reader.buffer.count );
     readResult := Reflect( *mB, *reader );
 
-    // TODO Remove!
-    mB.mana = 666;
-
     log( "Reader result: %\n", readResult );
     Expect( readResult == .Ok );
 
