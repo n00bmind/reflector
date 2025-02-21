@@ -7,6 +7,7 @@
 
 Reflector :: #import "reflector";
 
+#load "src/test_utils.jai";
 // #load "src/basic.jai";
 // #load "src/reflect.jai"; // For StructNodeIdentFor
 
@@ -43,7 +44,7 @@ build :: ()
 
     // Test executable
     {
-        w := compiler_create_workspace();
+        w := compiler_create_workspace( "Test" );
 
         options := global_options;
         options.output_type = .EXECUTABLE;
@@ -63,6 +64,7 @@ build :: ()
         // I assume this must happen before we add files to the compilation?
         compiler_begin_intercept( w );
 
+        // TODO Why did we need to add this here again? Also.. rename
         Reflector.AddSourceStubs( w );
         add_build_file( "src/test.jai", w );
 
@@ -73,7 +75,7 @@ build :: ()
 
     // Benchmark executable
     {
-        w := compiler_create_workspace();
+        w := compiler_create_workspace( "Bench" );
 
         options := global_options;
         options.output_type = .EXECUTABLE;
@@ -176,7 +178,7 @@ MessageLoop :: ( w: Workspace )
                 proc := tc.expression;
 
                 // Skip procs that are imported from somewhere
-                if proc.enclosing_load {
+                if proc.enclosing_load && proc.enclosing_load.enclosing_import {
                     if proc.enclosing_load.enclosing_import.module_type != .MAIN_PROGRAM
                         continue;
                 }
@@ -185,6 +187,10 @@ MessageLoop :: ( w: Workspace )
                 if HasNote( proc, "test" )
                 {
                     array_add( *globalTests, proc );
+                }
+                else if HasNote( proc, "test_buildtime" )
+                {
+                    array_add( *globalBuildTests, proc );
                 }
             }
 
@@ -275,6 +281,30 @@ MessageLoop :: ( w: Workspace )
                         globalEmittedTestsTable = true;
                     }
 
+                    if !globalEmittedBuildTests
+                    {
+                        print_to_builder( *globalBuilder, "AllBuildtimeTests: [%] TestCase = .[\n", globalBuildTests.count );
+
+                        for globalBuildTests
+                        print_to_builder( *globalBuilder, "    .{ name = \"%\", proc = % },\n", it.name, it.name );
+
+                        append( *globalBuilder, "];\n" );
+
+                        add_build_string( builder_to_string( *globalBuilder ), w, message = globalMainTestFile );
+                        free_buffers( *globalBuilder );
+                        array_reset( *globalBuildTests );
+
+                        globalEmittedBuildTests = true;
+                    }
+                    else if !ranEmittedBuildTests
+                    {
+                        append( *globalBuilder, "#run RunAllBuildtimeTests();\n" );
+                        add_build_string( builder_to_string( *globalBuilder ), w, message = globalMainTestFile );
+                        free_buffers( *globalBuilder );
+
+                        ranEmittedBuildTests = true;
+                    }
+
                     #if EmitStructCodeNodes
                     {
                         // Continue trying to emit any nodes we haven't yet emitted
@@ -345,7 +375,10 @@ HasNote :: ( header: *Code_Procedure_Header, note: string, args: *string = null 
 {
     for header.notes
     {
-        if starts_with( it.text, note )
+        if it.text == note
+            return true;
+        // Crappy check to also account for notes followed by "arguments"
+        else if starts_with( it.text, tprint( "%(", note ) )
         {
             if args
             {
@@ -376,4 +409,7 @@ globalRunnerArgs: [..] string;
 
 globalMainTestFile: *Message;
 globalTests: [..] *Code_Procedure_Header;
+globalBuildTests: [..] *Code_Procedure_Header;
 globalEmittedTestsTable: bool = false;
+globalEmittedBuildTests: bool = false;
+ranEmittedBuildTests: bool = false;
