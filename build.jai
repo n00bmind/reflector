@@ -61,6 +61,8 @@ build :: ()
         }
         set_build_options( options, w );
 
+        verbose := array_find(options.compile_time_command_line, "-verbose");
+
         // I assume this must happen before we add files to the compilation?
         compiler_begin_intercept( w );
 
@@ -68,7 +70,7 @@ build :: ()
         Reflector.AddSourceStubs( w );
         add_build_file( "src/test.jai", w );
 
-        MessageLoop( w );
+        MessageLoop( w, verbose );
 
         compiler_end_intercept(w);
     }
@@ -151,7 +153,7 @@ PrintDebugLogs :: false;
     }
 }
 
-MessageLoop :: ( w: Workspace )
+MessageLoop :: ( w: Workspace, verbose := false )
 {
     while true
     {
@@ -188,7 +190,7 @@ MessageLoop :: ( w: Workspace )
                 {
                     array_add( *globalTests, proc );
                 }
-                else if HasNote( proc, "test_buildtime" )
+                if HasNote( proc, "test_buildtime" )
                 {
                     array_add( *globalBuildTests, proc );
                 }
@@ -298,7 +300,8 @@ MessageLoop :: ( w: Workspace )
                     }
                     else if !ranEmittedBuildTests
                     {
-                        append( *globalBuilder, "#run RunAllBuildtimeTests();\n" );
+                        // NOTE Need this to be stallable because we have tests depending on the output of other tests
+                        print_to_builder( *globalBuilder, "#run,stallable RunAllBuildtimeTests( % );\n", verbose );
                         add_build_string( builder_to_string( *globalBuilder ), w, message = globalMainTestFile );
                         free_buffers( *globalBuilder );
 

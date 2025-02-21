@@ -98,7 +98,7 @@ TestMonsterFB :: ()
 {
     TestBinaryMonster( "Flatbuffers", BinaryReaderFB, BinaryWriterFB );
 } @test
-TestMonsterCustomWithAVeryVeryLongNameYoWasssup :: ()
+TestMonsterCustom :: ()
 {
     TestBinaryMonster( "Custom", BinaryReader, BinaryWriter );
 } @test

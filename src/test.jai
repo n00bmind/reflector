@@ -78,9 +78,9 @@ RunAllTests :: () -> s32
     return failedCount;
 }
 
-RunAllBuildtimeTests :: () -> s32 #compile_time
+RunAllBuildtimeTests :: ( verbose: bool ) -> s32 #compile_time
 {
-    failedCount := RunTests( AllBuildtimeTests, verbose = false );
+    failedCount := RunTests( AllBuildtimeTests, verbose );
     print( "\n" );
     return failedCount;
 }

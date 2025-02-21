@@ -1,6 +1,6 @@
 
-// TODO Cannot have dynamic arrays here can we
-ConstantFoo: DeeperType:
+// NOTE This method needs constant values hence cannot be used to test types containing dynamic arrays
+SerializedFoo: DeeperType:
 .{
     .{
         .{ .{ 42 }, .[ 3, 2, 1 ], "Cowabunga" },
@@ -12,9 +12,9 @@ ConstantFoo: DeeperType:
 #placeholder BuildTimeBuffer;       // [] u8
 
 
-TestBuildTimeSerializer:: ()
+TestBuildtimeSerializer:: ()
 {
-    foo := ConstantFoo;
+    foo := SerializedFoo;
 
     writer: BinaryWriterGM;
     writeResult := Reflect( *foo, *writer );
@@ -23,26 +23,23 @@ TestBuildTimeSerializer:: ()
 
     Expect( writeResult == .Ok );
 
-
-    output := ToArray( *writer.buffer );
-
     // Create a byte array literal to insert back into the program
     builder: String_Builder;
     append( *builder, "BuildTimeBuffer :: u8.[\n" );
 
-    rowCount := output.count / 16;
-    for r: 0 .. rowCount - 1
+    output := ToArray( *writer.buffer );
+    for output
     {
-        print_to_builder( *builder, "    " );
-        for c: 0 .. 15
-        {
-            idx := r * 16 + c;
-            if idx >= output.count
-                break r;
+        row := it_index / 16;
+        col := it_index % 16;
 
-            print_to_builder( *builder, "0x%,\t", formatInt(output[idx], base=16) );
-        }
-        print_to_builder( *builder, "\n" );
+        if col == 0
+            print_to_builder( *builder, "    " );
+
+        print_to_builder( *builder, "0x%,\t", formatInt(output[it_index], base=16) );
+
+        if col == 15
+            print_to_builder( *builder, "\n" );
     }
 
     append( *builder, "];\n" );
@@ -50,3 +47,19 @@ TestBuildTimeSerializer:: ()
     add_build_string( builder_to_string( *builder ), w = -1 );
 
 } @test_buildtime
+
+TestBuildtimeDeserializer:: ()
+{
+    reader: BinaryReaderGM;
+    reader.buffer = BuildTimeBuffer;
+    log( "Reading % bytes\n", reader.buffer.count );
+
+    readThing: DeeperType;
+    readResult := Reflect( *readThing, *reader );
+
+    log( "Reader result: %\n", readResult );
+    Expect( readResult == .Ok );
+
+    Expect( DeepEquals( readThing, SerializedFoo ) );
+
+} @test_buildtime @test
