@@ -6,8 +6,8 @@
 #import "Hash_Table";
 
 Reflector :: #import "reflector";
+#import "unotest";
 
-#load "src/test_utils.jai";
 // #load "src/basic.jai";
 // #load "src/reflect.jai"; // For StructNodeIdentFor
 
@@ -15,14 +15,9 @@ build :: ()
 {
     set_build_options_dc( .{do_output=false} );  // No executable for this workspace.
 
-    // The compiler will set the CWD to the directory containing the current file
-    //path := get_working_directory();
-    //print( "Working directory for 'build' metaprogram: '%'\n", path );
-
     global_options := get_build_options();
     global_options.output_path = "bin";
     global_options.intermediate_path = "bin";
-
 
     build_release := false;
     args := global_options.compile_time_command_line;
@@ -41,38 +36,27 @@ build :: ()
         }
     }
 
+    if build_release
+    {
+        set_optimization( *global_options, .VERY_OPTIMIZED, true );
+        global_options.backend =.LLVM;
+    }
+    else
+    {
+        set_optimization( *global_options, .DEBUG, true );
+        global_options.backend =.X64;
+    }
+
 
     // Test executable
     {
-        w := compiler_create_workspace( "Test" );
+        w := BeginTestWorkspace( "Tests", global_options );
 
-        options := global_options;
-        options.output_type = .EXECUTABLE;
-        options.output_executable_name = "test";
-        if build_release
-        {
-            set_optimization( *options, .VERY_OPTIMIZED, true );
-            options.backend =.LLVM;
-        }
-        else
-        {
-            set_optimization( *options, .DEBUG, true );
-            options.backend =.X64;
-        }
-        set_build_options( options, w );
-
-        verbose := array_find(options.compile_time_command_line, "-verbose");
-
-        // I assume this must happen before we add files to the compilation?
-        compiler_begin_intercept( w );
-
-        // TODO Why did we need to add this here again? Also.. rename
+        // TODO How do we control exactly what to add etc? Also.. rename
         Reflector.AddSourceStubs( w );
         add_build_file( "src/test.jai", w );
 
-        MessageLoop( w, verbose );
-
-        compiler_end_intercept(w);
+        EndTestWorkspace( w );
     }
 
     // Benchmark executable
@@ -82,19 +66,8 @@ build :: ()
         options := global_options;
         options.output_type = .EXECUTABLE;
         options.output_executable_name = "bench";
-        if build_release
-        {
-            set_optimization( *options, .VERY_OPTIMIZED, true );
-            options.backend =.LLVM;
-        }
-        else
-        {
-            set_optimization( *options, .DEBUG, true );
-            options.backend =.X64;
-        }
         set_build_options( options, w );
 
-        // I assume this must happen before we add files to the compilation?
         // compiler_begin_intercept( w );
 
         Reflector.AddSourceStubs( w );
@@ -153,7 +126,7 @@ PrintDebugLogs :: false;
     }
 }
 
-MessageLoop :: ( w: Workspace, verbose := false )
+MessageLoop :: ( w: Workspace, verboseTests := false )
 {
     while true
     {
@@ -301,7 +274,7 @@ MessageLoop :: ( w: Workspace, verbose := false )
                     else if !ranEmittedBuildTests
                     {
                         // NOTE Need this to be stallable because we have tests depending on the output of other tests
-                        print_to_builder( *globalBuilder, "#run,stallable RunAllBuildtimeTests( % );\n", verbose );
+                        print_to_builder( *globalBuilder, "#run,stallable RunAllBuildtimeTests( % );\n", verboseTests );
                         add_build_string( builder_to_string( *globalBuilder ), w, message = globalMainTestFile );
                         free_buffers( *globalBuilder );
 

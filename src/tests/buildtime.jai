@@ -1,3 +1,4 @@
+#import "Compiler"; 
 
 // NOTE This method needs constant values hence cannot be used to test types containing dynamic arrays
 SerializedFoo: DeeperType:
@@ -12,7 +13,7 @@ SerializedFoo: DeeperType:
 #placeholder BuildTimeBuffer;       // [] u8
 
 
-TestBuildtimeSerializer:: ()
+TestBuildtimeSerializer :: ()
 {
     foo := SerializedFoo;
 
@@ -48,7 +49,7 @@ TestBuildtimeSerializer:: ()
 
 } @test_buildtime
 
-TestBuildtimeDeserializer:: ()
+TestBuildtimeDeserializer :: ()
 {
     reader: BinaryReaderGM;
     reader.buffer = BuildTimeBuffer;

@@ -318,6 +318,8 @@ ArrayElementTypeFor :: ( t: *Type_Info_Array ) -> Type
 
 REFLECT_STUBS_FB :: #string STR
 
+#import "Bucket_Array";
+
 // NOTE We cannot use a combined function accepting BinaryReflectorFB here, as that is still a polymorph,
 // and hence atm the compiler fails to resolve that against the generic Reflect() (accepting $Reflector)
 // However in this case I dont think that's all that important
