@@ -1,6 +1,5 @@
+// TODO Add a new "NaiveReflector" contender using the reflection module included with the compiler (i.e. "runtime" reflection)
 #import "Basic";
-// TODO We're inserting code that now requires the user to import stuff.. how do we deal with this?
-#import "Bucket_Array";
 
 // TODO Automate dependency downloading etc
 #import "bricks";
