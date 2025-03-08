@@ -48,7 +48,7 @@ TestNestedTypeFB :: ()
 {
     TestBinaryNestedType( "Flatbuffers", BinaryReaderFB, BinaryWriterFB );
 } @test
-TestNestedTypeCustom :: ()
+TestNestedType :: ()
 {
     TestBinaryNestedType( "Custom", BinaryReader, BinaryWriter );
 } @test

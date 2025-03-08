@@ -1,5 +1,5 @@
 // TODO More test cases:
-// - Custom Reflect() overload
+// - Custom Reflector
 
 
 #import "Basic";
@@ -11,4 +11,4 @@
 #load "tests/monster.jai";
 #load "tests/nested.jai";
 #load "tests/buildtime.jai";
-
+#load "tests/overload.jai";

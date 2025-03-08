@@ -362,7 +362,7 @@ STR
 
 #scope_export
 
-// TODO We'll need to change build.jai to be able to discover these types too?
+// TODO Should we rename this so it's not confused with the mechanism used for custom reflectors?
 ReflectField :: ( d: *$T, sourceField: FieldInfo, r: *BinaryReflectorFB ) -> ReflectResult
 #modify
 {
@@ -430,22 +430,19 @@ ReflectField :: ( d: *$T, sourceField: FieldInfo, r: *BinaryReflectorFB ) -> Ref
             field = *r.fields[ table.firstFieldIdx + idx ];
             fieldType := FieldTypeFor( field.type );
 
-            if fieldType == .Inline
-                Write( field.value.value_pointer, field.size, r );
-            else if fieldType == .Table
+            if fieldType ==
             {
-                pos := GetRelativePos( r.tables[ field.tableIndex ].tablePos, r );
-                Write( *pos, size_of(uoffset), r );
-            }
-            else if fieldType == .Vector
-            {
-                pos := GetRelativePos( r.vectors[ field.vectorIndex ].pos, r );
-                Write( *pos, size_of(uoffset), r );
-            }
-            else if fieldType == .String
-            {
-                pos := GetRelativePos( r.strings[ field.stringIndex ].pos, r );
-                Write( *pos, size_of(uoffset), r );
+                case .Inline;
+                    Write( field.value.value_pointer, field.size, r );
+                case .Table;
+                    pos := GetRelativePos( r.tables[ field.tableIndex ].tablePos, r );
+                    Write( *pos, size_of(uoffset), r );
+                case .Vector;
+                    pos := GetRelativePos( r.vectors[ field.vectorIndex ].pos, r );
+                    Write( *pos, size_of(uoffset), r );
+                case .String;
+                    pos := GetRelativePos( r.strings[ field.stringIndex ].pos, r );
+                    Write( *pos, size_of(uoffset), r );
             }
         }
     }

@@ -1,15 +1,16 @@
 #import "Basic";
 #import "Compiler";
 #import "System";
+#import "File";
+#import "File_Utilities";
 #import "String";
 #import "Math";
 #import "Hash_Table";
 
 Reflector :: #import "reflector";
+// TODO Should we include our own internal copy?
 #import "unotest";
 
-// #load "src/basic.jai";
-// #load "src/reflect.jai"; // For StructNodeIdentFor
 
 build :: ()
 {
@@ -76,6 +77,36 @@ build :: ()
         // MessageLoop( w );
 
         // compiler_end_intercept(w);
+    }
+
+    // Dist
+    {
+        distPath := tprint( "%/dist", global_options.output_path );
+        make_directory_if_it_does_not_exist( distPath );
+
+        distFiles :=
+        string.[
+            "module.jai",
+            "src/reflect.jai",
+            "src/reflect_binary.jai",
+            "src/reflect_binary_gm.jai",
+            "src/reflect_binary_fb.jai",
+            "src/datatypes.jai",
+            "src/basic.jai",
+        ];
+
+        success := true;
+        for f: distFiles
+        {
+            tgtPath := tprint( "%/%", distPath, f );
+            tgtDir := path_strip_filename( tgtPath );
+            make_directory_if_it_does_not_exist( tgtDir );
+
+            if !copy_file( f, tgtPath )
+                success = false;
+        }
+        if !success
+            print( "Dist script finished with errors!\n" );
     }
 
 }

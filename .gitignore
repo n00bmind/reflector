@@ -4,7 +4,7 @@
 *.exe
 *.exp
 *.pdb
-
 .session.vim
 .added_strings*.jai
 *.rdbg
+bin/

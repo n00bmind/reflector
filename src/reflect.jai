@@ -1,4 +1,5 @@
 
+// TODO Should these be in some kind of 'tools' file?
 DeepEquals :: ( a: Any, b: Any ) -> bool
 {
     errorStr: String_Builder;
