@@ -1,140 +1,7 @@
 
-// TODO Should these be in some kind of 'tools' file?
-DeepEquals :: ( a: Any, b: Any ) -> bool
-{
-    errorStr: String_Builder;
-    errorStr.allocator = temp;
-
-    print_type_to_builder( *errorStr, a.type );
-
-    result := DeepEqualsInternal( cast(*Any_Struct) *a, cast(*Any_Struct) *b, "", *errorStr );
-    if !result
-    {
-        log( "%\n", builder_to_string( *errorStr ) );
-        free_buffers( *errorStr );
-    }
-    return result;
-}
-
-DeepEqualsInternal :: ( a: *Any_Struct, b: *Any_Struct, scope: string, errorStr: *String_Builder ) -> bool
-{
-    if a.type != b.type
-    {
-        print_to_builder( errorStr, " - Types differ (a is %, b is %)", a.type, b.type );
-        return false;
-    }
-
-    builderState: struct
-    {
-        currentBuffer: *String_Builder.Buffer;
-        currentBufferCount: s64;
-    }
-    // Save current state in the stack
-    builderState.currentBuffer = get_current_buffer( errorStr );
-    builderState.currentBufferCount = builderState.currentBuffer.count;
-
-    append( errorStr, scope );
-
-    if a.type.type ==
-    {
-        case .STRUCT;
-        {
-            aType := cast(*Type_Info_Struct) a.type;
-            for aType.members
-            {
-                aIt := Any_Struct.{ it.type, a.value_pointer + it.offset_in_bytes };
-                bIt := Any_Struct.{ it.type, b.value_pointer + it.offset_in_bytes };
-
-                scope := tprint( ".%", it.name );
-                result := DeepEqualsInternal( *aIt, *bIt, scope, errorStr );
-                if !result
-                    return false;
-            }
-        }
-        case .ARRAY;
-        {
-            aType := cast(*Type_Info_Array) a.type;
-            bType := cast(*Type_Info_Array) b.type;
-            itType := aType.element_type;
-
-            aBase, bBase: *void = null;
-            aCount, bCount: s64 = 0;
-            if aType.array_type ==
-            {
-                case .FIXED;
-                    aBase = a.value_pointer;
-                    bBase = b.value_pointer;
-                    aCount = aType.array_count;
-                    bCount = bType.array_count;
-                case .VIEW;
-                    aArray := cast(*Array_View_64) a.value_pointer;
-                    bArray := cast(*Array_View_64) b.value_pointer;
-                    aBase = aArray.data;
-                    bBase = bArray.data;
-                    aCount = aArray.count;
-                    bCount = bArray.count;
-                case .RESIZABLE;
-                    aArray := cast(*Resizable_Array) a.value_pointer;
-                    bArray := cast(*Resizable_Array) b.value_pointer;
-                    aBase = aArray.data;
-                    bBase = bArray.data;
-                    aCount = aArray.count;
-                    bCount = bArray.count;
-            }
-
-            if aCount != bCount
-            {
-                print_to_builder( errorStr, " - Array counts differ (a is %, b is %)", aCount, bCount );
-                return false;
-            }
-            for idx: 0 .. aCount - 1
-            {
-                aIt := Any_Struct.{ itType, aBase + idx * itType.runtime_size };
-                bIt := Any_Struct.{ itType, bBase + idx * itType.runtime_size };
-                scope := tprint( ".[%]", idx );
-                result := DeepEqualsInternal( *aIt, *bIt, scope, errorStr );
-                if !result
-                    return false;
-            }
-        }
-        case .STRING;
-        {
-            aString := cast(*string) a.value_pointer;
-            bString := cast(*string) b.value_pointer;
-            result := <<aString == <<bString;
-            if !result
-            {
-                print_to_builder( errorStr, " - Strings differ (a is '%', b is '%')", <<aString, <<bString );
-                return false;
-            }
-        }
-        case;
-        {
-            // Simply memcmp their bytes
-            result := memcmp( a.value_pointer, b.value_pointer, a.type.runtime_size ) == 0;
-            if !result
-            {
-                append( errorStr, " - Contents differ (a is <" );
-                print_item_to_builder( errorStr, <<cast(*Any)a, false );
-                append( errorStr, ">, b is <" );
-                print_item_to_builder( errorStr, <<cast(*Any)b, false );
-                append( errorStr, ">)" );
-                return false;
-            }
-        }
-    }
-
-    // Rewind current error path by restoring the builder's state
-    errorStr.current_buffer = builderState.currentBuffer;
-    errorStr.current_buffer.count = builderState.currentBufferCount;
-
-    return true;
-}
-
-
 // TODO Most of this stuff can surely be module scope?
 
-// TODO Turn polymorph args into ReflectorFlags, most likely
+// TODO Turn polymorph args into ReflectorFlags, where possible
 Reflector :: struct (ReflectedTypeInfo: $T, $IsReading: bool, $SupportsPackedTypes: bool = false)
 {
     IsWriting :: !IsReading;
@@ -186,7 +53,6 @@ FindMemberDecl :: ( m: Type_Info_Struct_Member, members: [] *Code_Scope_Entry ) 
 // NOTE All notes can be written as specified or with a 'reflect_' prefix before the given name
 // NOTE Returns a temporary args array
 // TODO Convert string args based on names & types array
-// TODO Extract to bricks
 ParseNote :: ( noteName: string, notes: [] string, argNames: [] string = .[], argTypes: [] Type = .[] ) -> noteIndex: int, args: []string
 {
     assert( argNames.count == argTypes.count );
@@ -199,6 +65,7 @@ ParseNote :: ( noteName: string, notes: [] string, argNames: [] string = .[], ar
         noteStr := it;
         found := false;
 
+        // FIXME In the event of a note name collision, we just wont be able to use this at all?
         if starts_with( noteStr, name )
             found = true;
         else if starts_with( noteStr, prefixedName )
@@ -595,19 +462,17 @@ GenReflectFunction :: ( T: Type, st: *Type_Info_Struct, R: Type ) -> string #exp
 
 // Generate a separate polymorph instance and its corresponding body based on the type it was called with.
 // This way we only generate the overloads that are actually called from user code.
-// TODO When writing, *always order by offset in the source struct type* for cache friendliness
 // TODO When reading, the stream tells us the order of members to write to, which probably means the function body is the same
 // for all types, and we just HAVE TO do dynamic dispatch? Although, we can have a (compiletime) table of field id to member typeinfo
 // and recover a typed pointer to the member doing something like:
                 //M := get_root_type( m.type );
                 //Reflect( GetMemberValueAs( m, d, M ), r );
 
-REFLECT_STUBS :: #string STR
-
-// TODO When benchmarking, test making a custom overload for BinaryReflectors that tries to streamline this as much as possible
 // NOTE Apparently there's a limit to macro recursion .. https://github.com/Jai-Community/Jai-Community-Library/wiki/Getting-Started#nested-macros
 // As demonstrated, we can refer to the constants block of the type of a declared argument to declare a separate argument, like with
 // ReflectedTypeInfo here, which is freaking awesome!
+ReflectorStrings :: #string STR
+
 ReflectField :: ( field: Code, fieldId: u16, name: string, offsetBytes: s64, info: *r.ReflectedTypeInfo, r: *$R ) #expand
 {
     result: ReflectResult = .Ok;

@@ -1,4 +1,5 @@
 // TODO More test cases:
+// - Benchmark against a "standard" reflector (using jai's module)
 // - Custom Reflector
 
 
@@ -12,3 +13,5 @@
 #load "tests/nested.jai";
 #load "tests/buildtime.jai";
 #load "tests/overload.jai";
+
+

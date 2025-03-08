@@ -45,7 +45,7 @@ ReflectPacked :: inline ( d: *$T/interface struct {}, r: *BinaryReflector ) -> R
 
 #scope_module
 
-REFLECT_STUBS_BIN :: #string STR
+BinaryReflectorStrings :: #string STR
 
 Reflect :: ( d: *$T, r: *BinaryReflector ) -> ReflectResult
 #modify
@@ -228,6 +228,8 @@ Reflect :: inline ( d: *$T, r: *BinaryReflector ) -> ReflectResult
             else
             {
                 // TODO We probably want to be much more explicit with our allocators..
+                // TODO For "out-of-band" stuff like non-fixed arrays, we probably wanna have a queue where we put stuff to
+                // fill out at the very end, after we're done loading all the "in-line" content
                 Reset( d, count, initialized = false );
             }
         }

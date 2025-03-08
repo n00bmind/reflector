@@ -1,4 +1,7 @@
 
+- Support "common" attributes
+- Support custom attributes for custom reflectors
+
 - Write some simple usage instructions in the README, including the syntax to use to be able to use the plugin in a user's
   metaprogram.
 
@@ -6,7 +9,7 @@
   vtable of the source type (just the hash first, then the full vtable if it matches). If they're identical, just read the entire
   type in in one go.
 
-- May need to write a reference C++ version for comparing times etc
+- Would be interesting to write a reference C++ version for comparing times etc
 
 - A good point raised while using the lib as a module: what's the plan for when people want to serialise structs they don't control
   (declared in an external module)? Ideally we'd like to provide a mechanism similar to the Flatbuffers schema or something that would
@@ -16,7 +19,6 @@
 
 - Make the generator available as a metaprogram plugin, so people don't have to write their own metaprogram to use this
   https://github.com/Ivo-Balbaert/The_Way_to_Jai/blob/main/book/36_Plugins.md
-  * Seems like we won't need to touch the metaprogram after all?
 
 - Once the basic functionality is in place, as a fun excersice, it'd be cool to make additional output formats (besides ImGui & json),
   like for example, output a 010 Editor template so that the binary data can be easily inspected & edited.
@@ -31,6 +33,5 @@
 - Some interesting talks / reading about parsing Json:
   https://www.youtube.com/watch?v=wlvKAT7SZIQ
   https://www.youtube.com/watch?v=vd9J9PPmAMM
-  https://vimeo.com/644068002
   https://github.com/simdjson/simdjson#about-simdjson
 

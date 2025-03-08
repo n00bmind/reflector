@@ -17,19 +17,19 @@ get_plugin :: () -> *Metaprogram_Plugin
     return p;
 }
 
+// NOTE Some features (custom overloads, custom reflectors) require that the predefined Reflect() overloads in this module
+// get inserted into the user's application scope, otherwise our module won't find their code because there's currently no
+// mechanism for an app and a module to share scopes.. This is unnecessary for users that don't use these features, but for
+// simplicity currently we do it regardless. We try to keep these strings to strictly the minimum necessary, so hopefully
+// this won't be a big deal (may have to re-evaluate as we go).
 // NOTE This is callable from user programs, to inject the same code that the plugin would inject when invoked from the cmdline
-// TODO Check what the "official" way of applying a plugin from a user metaprogram is, if we ever do anything more complex we'll need it
-AddSourceStubs :: ( w: Workspace )
+// TODO Check if there's some other "official" way of applying a plugin from a user metaprogram
+AddUserStrings :: ( w: Workspace )
 {
-    // TODO *Everything and anything* that calls into Reflect() must end up inserted into the user's program,
-    // otherwise stuff won't be found!!
-    // TODO Even if "unrolled" Reflect() implementations prove to be worth it in terms of performance, we'd at least like to have
-    // a separate mode in which everything is kept inside the module and callable from user code (i.e. not an inserted string)
-    // so that the user can select whether they want to tradeoff potentially slower compilation times for the improved runtime perf.
-    add_build_string( REFLECT_STUBS, w );
-    add_build_string( REFLECT_STUBS_BIN, w );
-    add_build_string( REFLECT_STUBS_GM, w );
-    add_build_string( REFLECT_STUBS_FB, w );
+    add_build_string( ReflectorStrings, w );
+    add_build_string( BinaryReflectorStrings, w );
+    add_build_string( BinaryReflectorGMStrings, w );
+    add_build_string( BinaryReflectorFBStrings, w );
 }
 
 
@@ -43,7 +43,7 @@ globalReflectedTypes: Table(*Type_Info_Struct, bool);
 
 OnAddSource :: ( p: *Metaprogram_Plugin )
 {
-    AddSourceStubs( p.workspace );
+    AddUserStrings( p.workspace );
 }
 
 // TODO Since we've already inserted the polymorphic Reflect() for structs above,

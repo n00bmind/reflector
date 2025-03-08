@@ -316,7 +316,7 @@ ArrayElementTypeFor :: ( t: *Type_Info_Array ) -> Type
 
 #scope_module
 
-REFLECT_STUBS_FB :: #string STR
+BinaryReflectorFBStrings :: #string STR
 
 #import "Bucket_Array";
 

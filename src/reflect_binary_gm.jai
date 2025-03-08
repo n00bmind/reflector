@@ -234,7 +234,7 @@ ReflectPacked :: inline ( d: *$T/interface struct {}, r: *BinaryReflectorGM ) ->
 
 // TODO See how could make this part of the Reflector (struct) interface,
 // so that the plugin knows what to insert for each Reflector subtype
-REFLECT_STUBS_GM :: #string STR
+BinaryReflectorGMStrings :: #string STR
 
 Reflect :: ( d: *$T, r: *BinaryReflectorGM ) -> ReflectResult
 #modify

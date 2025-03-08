@@ -53,8 +53,7 @@ build :: ()
     {
         w := BeginTestWorkspace( "Tests", global_options );
 
-        // TODO How do we control exactly what to add etc? Also.. rename
-        Reflector.AddSourceStubs( w );
+        Reflector.AddUserStrings( w );
         add_build_file( "src/test.jai", w );
 
         EndTestWorkspace( w );
@@ -71,7 +70,7 @@ build :: ()
 
         // compiler_begin_intercept( w );
 
-        Reflector.AddSourceStubs( w );
+        Reflector.AddUserStrings( w );
         add_build_file( "src/bench.jai", w );
 
         // MessageLoop( w );
@@ -80,6 +79,7 @@ build :: ()
     }
 
     // Dist
+    // TODO Grab current system version of unotest and include it in our own private modules/ folder?
     {
         distPath := tprint( "%/dist", global_options.output_path );
         make_directory_if_it_does_not_exist( distPath );
@@ -87,6 +87,7 @@ build :: ()
         distFiles :=
         string.[
             "module.jai",
+            "src/plugin.jai",
             "src/reflect.jai",
             "src/reflect_binary.jai",
             "src/reflect_binary_gm.jai",
