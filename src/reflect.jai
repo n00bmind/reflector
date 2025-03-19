@@ -403,7 +403,7 @@ GenReflectFunction :: ( T: Type, st: *Type_Info_Struct, R: Type ) -> string #exp
     if !ok
         return "";
 
-    append( *globalBuilder, tprint( "    // Body of Reflect( *%, *% )\n", T, R ) );
+    append( *globalBuilder, tprint( "    // Body of Reflect( *%, % )\n", T, R ) );
 
     isPacked := false;
     // TODO Consider making all other customizable bits in Reflectors (including functions like Begin/EndReflectType etc.) be constants
@@ -472,6 +472,28 @@ GenReflectFunction :: ( T: Type, st: *Type_Info_Struct, R: Type ) -> string #exp
 // As demonstrated, we can refer to the constants block of the type of a declared argument to declare a separate argument, like with
 // ReflectedTypeInfo here, which is freaking awesome!
 ReflectorStrings :: #string STR
+
+// TODO TODO TODO Ideally we'd like this to be here, so that custom user reflectors don't need to define their own version of this
+// for their specific Reflector. However this currently clashes with the specialized Reflect overloads for BinaryReflector f.e.
+// since overload resolution doesnt seem to consider either the 'using' relationship between BinaryReflector and Reflector,
+// nor the fact that one is more "concrete" than the other (has less polymorphic args).
+// See if reporting about this convinces Jon to fix it..
+#if 0
+{
+    Reflect :: ( d: *$T, r: *Reflector ) -> ReflectResult
+    #modify
+    {
+        ti := cast(*Type_Info) T;
+        return ti.type == .STRUCT;
+    }
+    {
+        // TODO Do we wanna keep a chached mapping of type_info to generated string?
+        // (for the 'production-ready' generators we need this anyway to generate the type descriptor tables)
+        // NOTE according to how_to 100 though, this #run should only be invoked once for each type we pass in $T
+        // Do we see two because we pass both a reader and a writer in r for each type?
+        #insert #run GenReflectFunction( T, type_info( T ), type_of( r ) );
+    }
+}
 
 ReflectField :: ( field: Code, fieldId: u16, name: string, offsetBytes: s64, info: *r.ReflectedTypeInfo, r: *$R ) #expand
 {

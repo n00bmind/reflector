@@ -30,6 +30,7 @@ AddUserStrings :: ( w: Workspace )
     add_build_string( BinaryReflectorStrings, w );
     add_build_string( BinaryReflectorGMStrings, w );
     add_build_string( BinaryReflectorFBStrings, w );
+    add_build_string( JsonReflectorStrings, w );
 }
 
 

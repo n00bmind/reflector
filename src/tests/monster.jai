@@ -103,3 +103,21 @@ TestMonster :: ()
     TestBinaryMonster( "Custom", BinaryReader, BinaryWriter );
 } @test
 
+
+TestJsonMonster :: ()
+{
+    mA, mB: Monster;
+    mA.pos = .{ -1.0, 2.0, 3.0 };
+    array_add( *mA.inventory, 1 );
+    array_add( *mA.inventory, 3 );
+    array_add( *mA.inventory, 7 );
+    array_add( *mA.inventory, 15 );
+    array_add( *mA.inventory, 31 );
+    array_add( *mA.inventory, 63 );
+    array_add( *mA.inventory, 127 );
+    array_add( *mA.inventory, 255 );
+    array_add( *mA.weapons, .{ "Sword", 69 } );
+
+    writer: JsonWriter;
+    writeResult := Reflect( *mA, *writer );
+}

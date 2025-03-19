@@ -323,7 +323,7 @@ BinaryReflectorFBStrings :: #string STR
 // NOTE We cannot use a combined function accepting BinaryReflectorFB here, as that is still a polymorph,
 // and hence atm the compiler fails to resolve that against the generic Reflect() (accepting $Reflector)
 // However in this case I dont think that's all that important
-// TODO Test what happens with the latest compiler version
+// TODO Should be able to do this once we are allowed to declare a "root" Reflect() for type Reflector
 Reflect :: ( d: *$T/interface struct {}, r: *BinaryWriterFB ) -> ReflectResult
 {
     rootField: FieldInfo;

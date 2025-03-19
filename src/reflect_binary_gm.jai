@@ -236,6 +236,8 @@ ReflectPacked :: inline ( d: *$T/interface struct {}, r: *BinaryReflectorGM ) ->
 // so that the plugin knows what to insert for each Reflector subtype
 BinaryReflectorGMStrings :: #string STR
 
+// TODO Declaring this should be redundant once we are allowed to define a "root" Reflect() for type Reflector
+// NOTE This overload also needs to be inserted, because it calls into the "root" ReflectField, which is also inserted
 Reflect :: ( d: *$T, r: *BinaryReflectorGM ) -> ReflectResult
 #modify
 {
@@ -243,8 +245,7 @@ Reflect :: ( d: *$T, r: *BinaryReflectorGM ) -> ReflectResult
     return ti.type == .STRUCT;
 }
 {
-    // TODO Doing things this way means a new #run happens everytime we invoke this function, hence the same code is inserted more than once
-    // So we probably want to keep a chached mapping of type_info to generated string
+    // TODO Do we wanna keep a cached mapping of type_info to generated string?
     // (for the 'production-ready' generators we need this anyway to generate the type descriptor tables)
     // Note that according to how_to 100 though, this #run should only be invoked once for each type we pass in $T
     // Do we see two because we pass both a reader and a writer in r for each type?
@@ -257,9 +258,9 @@ Reflect :: inline ( d: *$T, r: *BinaryReflectorGM ) -> ReflectResult #expand
     ti := cast(*Type_Info) T;
     return ti.type != .STRUCT;
 }
-// TODO This body should belong in a function called ReflectField, and we should be calling into that automatically
+// TODO This body should belong in a function called ReflectPrimitive, and we should be calling into that automatically
 // from reflect.jai from a Reflect() overload with a #modify block like the one just above
-// TODO Problem is, this calls into Reflect() again and so this code needs to also be injected into the user app global namespace
+// TODO I suppose the same issue with ambiguity that we have with the struct Reflect applies here..
 {
     // TODO We probably want to be able to do something more sophisticated for enums
     #if #run IsPrimitiveType( T )

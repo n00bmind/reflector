@@ -8,7 +8,7 @@
 #import "Hash_Table";
 
 Reflector :: #import "reflector";
-// TODO Should we include our own internal copy?
+// TODO we should include our own internal copy
 #import "unotest";
 
 
@@ -79,7 +79,9 @@ build :: ()
     }
 
     // Dist
-    // TODO Grab current system version of unotest and include it in our own private modules/ folder?
+    // TODO Grab current system version of required modules and include it in our own private modules/ folder
+    // - unotest
+    // - json
     {
         distPath := tprint( "%/dist", global_options.output_path );
         make_directory_if_it_does_not_exist( distPath );

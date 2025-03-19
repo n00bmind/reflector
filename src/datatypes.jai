@@ -1,4 +1,6 @@
 
+//// BufferBuilder
+
 BufferBuilder :: struct( PageSize: int )
 {
     #assert( IsPowerOf2( PageSize ) );
@@ -120,6 +122,8 @@ Reserve :: ( using buffer: *BufferBuilder, newCapacity: int )
     GrowPageBuffer( buffer, requiredPageCount );
 }
 
+
+//// TempHeap
 
 TempHeap :: struct
 {

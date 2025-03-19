@@ -117,9 +117,10 @@ PushEmpty :: inline ( array: *Bucket_Array, count: s64 )
         find_and_occupy_empty_slot( array, initialize=true );
 }
 
-Pop :: inline ( array: *[..] $T, out: *T )
+Pop :: inline ( array: *[..] $T, out: *T = null )
 {
-    <<out = (<<array)[array.count - 1];
+    if out != null
+        out.* = (array.*)[array.count - 1];
     array.count -= 1;
 }
 
