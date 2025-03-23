@@ -85,6 +85,11 @@ Contains :: ( array: [] $T, value: T ) -> bool
     return false;
 }
 
+First :: inline ( array: [..] $T ) -> *T
+{
+    return ifx array.count > 0 then *array[0] else null;
+}
+
 Last :: inline ( array: [..] $T ) -> *T
 {
     return ifx array.count > 0 then *array[array.count - 1] else null;

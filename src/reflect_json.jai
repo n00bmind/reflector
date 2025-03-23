@@ -2,7 +2,6 @@
 #import "json";
 
 // TODO IMPORTANT Decide whether we want to deal with field ids in some way, or just provide this as "example code"
-
 JsonReflector :: struct( $IsReading2: bool )
 {
     // TODO Eliminate the "type info" parameter from the root polymorphic Reflector, and let each implementation deal with that
@@ -19,31 +18,65 @@ JsonReflector :: struct( $IsReading2: bool )
     stack: [..] StackEntry;
     // NOTE Cached pointer to the last entry in the stack above (unstable, dont store!)
     head: *StackEntry;
+    depth: int;
 }
 
 JsonReader :: struct
 {
     #as using base: JsonReflector( true );
 
+    input: string;
 }
 
 JsonWriter :: struct
 {
     #as using base: JsonReflector( false );
 
-    builder: String_Builder;
-    debugOutput: string;
+    output: string;
 }
+
 
 
 // TODO How do we avoid having to define these when they're not needed?
 // Can we check for them with #exists or something?
 BeginReflectType :: ( info: *void, type: Type, r: *JsonReflector ) -> bool
 {
+    if r.depth == 0
+    {
+        #if r.IsWriting
+        {
+            InitJsonWriter( xx r );
+        }
+        else
+        {
+            reader := cast(*JsonReader) r;
+            if reader.input.data == null
+            {
+                assert( false && "'input' attribute must be set to point to the Json string to deserialize" );
+                return false;
+            }
+
+            root := json_parse( reader.input );
+            InitJsonReader( reader, root );
+        }
+    }
+
+    r.depth += 1;
     return true;
 }
 EndReflectType :: ( info: *void, r: *JsonReflector )
 {
+    r.depth -= 1;
+
+    if r.depth == 0
+    {
+        #if r.IsWriting
+        {
+            head := First( r.stack );
+            if head
+                r.output = json_write_pretty( head.value );
+        }
+    }
 }
 
 
@@ -86,7 +119,7 @@ BeginReflectField :: ( fieldId: u16, name: string, offsetFromParent: s64, info: 
     {
         // Find child with given name under current root object
         obj := json_value_as_object( r.head.value );
-        assert( obj ); //, "Current head is not a Json object" );
+        assert( obj && "Current head is not a Json object" );
 
         // TODO Probably would want to accelerate this with a hashtable or whatever
         child := FindChild( name, obj );
@@ -105,13 +138,13 @@ EndReflectField :: ( fieldId: u16, info: *void, r: *JsonReflector )
 
 Push :: ( using r: *JsonReflector, value: *json_value_s )
 {
-    newHead := Push( *stack );
-    newHead.value = value;
+    head = Push( *stack );
+    head.value = value;
 }
 
 Pop :: ( using r: *JsonReflector )
 {
-    assert( stack.count != 0 ); //, "JsonReflector stack underrun" );
+    assert( stack.count != 0 && "JsonReflector stack underrun" );
     Pop( *stack );
     head = Last( stack );
 }
@@ -127,23 +160,24 @@ NewEmptyObjValue :: () -> *json_value_s
 
 #scope_module
 
-// TODO Embed in the serialisation logic?
+InitJsonReader :: ( using r: *JsonReader, root: *json_value_s )
+{
+    stack.count = 0;
+
+    assert( root );
+    Push( r, root );
+}
+
 InitJsonWriter :: ( using r: *JsonWriter )
 {
+    stack.count = 0;
+
     // Create an empty root object and add it to the stack
     obj := New( json_object_s,, allocator = temp );
 
     root := New( json_value_s,, allocator = temp );
     root.* = .{ obj, .json_type_object };
 
-    Push( r, root );
-}
-
-// TODO How do we indicate / invoke any custom init logic that needs to happen like this?
-// TODO Overload with something that just takes in json text
-InitJsonReader :: ( using r: *JsonReader, root: *json_value_s )
-{
-    assert( root );
     Push( r, root );
 }
 
@@ -213,7 +247,7 @@ Reflect :: inline ( d: *$T, r: *JsonReflector ) -> ReflectResult #expand
     {
         #if r.IsWriting
         {
-            str := tprint( "%", d );
+            str := tprint( "%", d.* );
             numValue := New( json_number_s,, allocator = temp );
             numValue.* = .{ str.data, xx str.count };
 
@@ -236,7 +270,7 @@ Reflect :: inline ( d: *$T, r: *JsonReflector ) -> ReflectResult #expand
     {
         #if r.IsWriting
         {
-            str := tprint( "%", d );
+            str := tprint( "%", d.* );
             numValue := New( json_number_s,, allocator = temp );
             numValue.* = .{ str.data, xx str.count };
 

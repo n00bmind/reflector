@@ -118,6 +118,9 @@ TestJsonMonster :: ()
     array_add( *mA.inventory, 255 );
     array_add( *mA.weapons, .{ "Sword", 69 } );
 
+    // FIXME Enums
+    // TODO Ensure all reflectors check for #specified
     writer: JsonWriter;
     writeResult := Reflect( *mA, *writer );
-}
+    log( "Writer result:\n %\n", writer.output );
+} @test
