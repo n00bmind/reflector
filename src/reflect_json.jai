@@ -103,6 +103,28 @@ EndReflectField :: ( fieldId: u16, info: *void, r: *JsonReflector )
 }
 
 
+Push :: ( using r: *JsonReflector, value: *json_value_s )
+{
+    newHead := Push( *stack );
+    newHead.value = value;
+}
+
+Pop :: ( using r: *JsonReflector )
+{
+    assert( stack.count != 0 ); //, "JsonReflector stack underrun" );
+    Pop( *stack );
+    head = Last( stack );
+}
+
+emptyObj := json_object_s.{};
+NewEmptyObjValue :: () -> *json_value_s
+{
+    val := New( json_value_s,, allocator = temp );
+    val.* = .{ *emptyObj, .json_type_object };
+    return val;
+}
+
+
 #scope_module
 
 // TODO Embed in the serialisation logic?
@@ -125,27 +147,6 @@ InitJsonReader :: ( using r: *JsonReader, root: *json_value_s )
     Push( r, root );
 }
 
-Push :: ( using r: *JsonReflector, value: *json_value_s )
-{
-    newHead := Push( *stack );
-    newHead.value = value;
-}
-
-Pop :: ( using r: *JsonReflector )
-{
-    assert( stack.count != 0 ); //, "JsonReflector stack underrun" );
-    Pop( *stack );
-    head = Last( stack );
-}
-
-emptyObj := json_object_s.{};
-NewEmptyObjValue :: () -> *json_value_s
-{
-    val := New( json_value_s,, allocator = temp );
-    val.* = .{ *emptyObj, .json_type_object };
-    return val;
-}
-
 FindChild :: ( name: string, obj: *json_object_s ) -> *json_value_s
 {
     child := obj.start;
@@ -163,6 +164,8 @@ FindChild :: ( name: string, obj: *json_object_s ) -> *json_value_s
 // TODO See how could make this part of the Reflector (struct) interface,
 // so that the plugin knows what to insert for each Reflector subtype
 JsonReflectorStrings :: #string STR
+
+#import "json";
 
 // TODO Declaring this should be redundant once we are allowed to define a "root" Reflect() for type Reflector
 // NOTE This overload also needs to be inserted, because it calls into the "root" ReflectField, which is also inserted
@@ -190,7 +193,162 @@ Reflect :: inline ( d: *$T, r: *JsonReflector ) -> ReflectResult #expand
 // from reflect.jai from a Reflect() overload with a #modify block like the one just above
 // TODO I suppose the same issue with ambiguity that we have with the struct Reflect applies here..
 {
+    #if T == bool
+    {
+        #if r.IsWriting
+        {
+            r.head.value.* = .{ null, ifx d.* then .json_type_true else .json_type_false };
+        }
+        else
+        {
+            if json_value_is_true( r.head.value )
+                d.* = true;
+            else if json_value_is_false( r.head.value )
+                d.* = false;
+            else
+                return .BadData;
+        }
+    }
+    else #if #run IsIntegerType( T )
+    {
+        #if r.IsWriting
+        {
+            str := tprint( "%", d );
+            numValue := New( json_number_s,, allocator = temp );
+            numValue.* = .{ str.data, xx str.count };
+
+            r.head.value.* = .{ numValue, .json_type_number };
+        }
+        else
+        {
+            numValue := json_value_as_number( r.head.value );
+            if !numValue
+                return .BadData;
+
+            num, ok := string_to_int( numValue.number, 10, T );
+            if ok
+                d = num;
+            else
+                return.BadData;
+        }
+    }
+    else #if #run IsFloatType( T )
+    {
+        #if r.IsWriting
+        {
+            str := tprint( "%", d );
+            numValue := New( json_number_s,, allocator = temp );
+            numValue.* = .{ str.data, xx str.count };
+
+            r.head.value.* = .{ numValue, .json_type_number };
+        }
+        else
+        {
+            numValue := json_value_as_number( r.head.value );
+            if !numValue
+                return .BadData;
+
+            // #if T == float
+            //     num, ok := string_to_float( numValue.number );
+            // else
+            // TODO Does this work
+                num, ok := cast(T) string_to_float64( numValue.number );
+
+            if ok
+                d = num;
+            else
+                return.BadData;
+        }
+    }
+    else #if T == string
+    {
+        #if r.IsWriting
+        {
+            strValue := New( json_string_s,, allocator = temp );
+            strValue.* = .{ d.data, xx d.count };
+
+            r.head.value.* = .{ strValue, .json_type_string };
+        }
+        else
+        {
+            strValue := json_value_as_string( r.head.value );
+            if !strValue
+                return .BadData;
+
+            d = .{ strValue.str, xx strValue.string_size };
+        }
+    }
+    else #if #run IsArrayType( T )
+    {
+        #if r.IsWriting
+        {
+            arrayValue := New( json_array_s,, allocator = temp );
+
+            prev: *json_array_element_s;
+            for d.*
+            {
+                // Push a blank value to reflect into to the stack
+                itValue := NewEmptyObjValue();
+                Push( r, itValue );
+
+                result := Reflect( *it, r );
+                if result != .Ok
+                    return result;
+
+                itElem := New( json_array_element_s,, allocator = temp );
+                itElem.* = .{ itValue, null };
+
+                if it_index == 0
+                    arrayValue.start = itElem;
+                else
+                    prev.next = itElem;
+
+                Pop( r );
+
+                prev = itElem;
+            }
+
+            arrayValue.length = xx d.count;
+            r.head.value.* = .{ arrayValue, .json_type_array };
+        }
+        else
+        {
+            arrayValue := json_value_as_array( r.head.value );
+            if !arrayValue
+                return .BadData;
+
+            count: int = xx arrayValue.length;
+            #if #run IsFixedArrayType( T )
+            {
+                // TODO Do we want to be more fault tolerant here?
+                if count != d.count
+                    return .BadData;
+            }
+            else
+            {
+                Reset( d, count, false );
+            }
+
+            itElem := array.start;
+            for d.*
+            {
+                if !itElem
+                    return .BadData;
+
+                Push( r, itElem.value );
+
+                // TODO QUESTION Is 'it' a "reference" to the actual value? i.e. does this pointer work?
+                result := Reflect( *it, r );
+                if result != .Ok
+                    return result;
+
+                Pop( r );
+            }
+        }
+    }
+
     return .Ok;
 }
 
 STR
+

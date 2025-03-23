@@ -286,10 +286,19 @@ IsPrimitiveType :: inline ( $T: Type ) -> bool
 
 // TODO We should be able to make these 'constexpr/eval' functions, but how does one do that in Jai?
 // May be a good Q for the next Q&A
+IsIntegerType :: inline ( $T: Type ) -> bool
+{
+    return (cast(*Type_Info) T).type == .INTEGER;
+}
+IsFloatType :: inline ( $T: Type ) -> bool
+{
+    return (cast(*Type_Info) T).type == .FLOAT;
+}
+
 IsArrayType :: inline ( $T: Type ) -> bool
 {
     ti := cast(*Type_Info) T;
-    return ti.type == .ARRAY || ti.type == .STRING;
+    return ti.type == .ARRAY;
 }
 
 IsFixedArrayType :: inline ( $T: Type ) -> bool
@@ -304,9 +313,6 @@ IsFixedArrayType :: inline ( $T: Type ) -> bool
 IsPrimitiveArrayType :: inline ( $T : Type ) -> bool
 {
     ti := cast(*Type_Info) T;
-
-    if ti.type == .STRING
-        return true;
 
     if ti.type != .ARRAY
         return false;
