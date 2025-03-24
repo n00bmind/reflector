@@ -243,11 +243,23 @@ Reflect :: inline ( d: *$T, r: *JsonReflector ) -> ReflectResult #expand
                 return .BadData;
         }
     }
-    else #if #run IsIntegerType( T )
+    else #if #run IsIntegralType( T )
     {
+        #run CheckSpecifiedEnumType( T );
+
         #if r.IsWriting
         {
-            str := tprint( "%", d.* );
+            str: string;
+            #if #run IsEnumType( T )
+            {
+                tie := cast(*Type_Info_Enum) T;
+                if tie.internal_type.signed
+                    str = tprint( "%", cast(s64) d.* );
+                else
+                    str = tprint( "%", cast(u64) d.* );
+            }
+            else
+                str = tprint( "%", d.* );
             numValue := New( json_number_s,, allocator = temp );
             numValue.* = .{ str.data, xx str.count };
 

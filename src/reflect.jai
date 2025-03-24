@@ -286,10 +286,32 @@ IsPrimitiveType :: inline ( $T: Type ) -> bool
 
 // TODO We should be able to make these 'constexpr/eval' functions, but how does one do that in Jai?
 // May be a good Q for the next Q&A
-IsIntegerType :: inline ( $T: Type ) -> bool
+IsIntegralType :: inline ( $T: Type ) -> bool
 {
-    return (cast(*Type_Info) T).type == .INTEGER;
+    ti := cast(*Type_Info) T;
+    return ti.type == .INTEGER || ti.type == .ENUM;
 }
+
+IsEnumType :: inline ( $T: Type ) -> bool
+{
+    ti := cast(*Type_Info) T;
+    return ti.type == .ENUM;
+}
+
+CheckSpecifiedEnumType :: ( $T: Type ) #compile_time
+{
+    ti := cast(*Type_Info) T;
+    if ti.type == .ENUM
+    {
+        tie := cast(*Type_Info_Enum) T;
+        if tie.enum_type_flags & .SPECIFIED == 0
+        {
+            // #location(T) is awesome sauce!
+            compiler_report( "Serialized enum type is not marked as #specified", #location(T) );
+        }
+    }
+}
+
 IsFloatType :: inline ( $T: Type ) -> bool
 {
     return (cast(*Type_Info) T).type == .FLOAT;

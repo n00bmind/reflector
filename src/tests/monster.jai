@@ -1,9 +1,9 @@
 
-Color :: enum u8
+Color :: enum u8 #specified
 {
-    Red :: 0;
-    Green;
-    Blue :: 2;
+    Red   :: 0;
+    Green :: 1;
+    Blue  :: 2;
 }
 
 Equipment :: union
