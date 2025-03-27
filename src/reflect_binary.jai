@@ -188,9 +188,10 @@ Reflect :: inline ( d: *$T, r: *BinaryReflector ) -> ReflectResult
     return ti.type != .STRUCT;
 }
 {
-    // TODO We probably want to be able to do something more sophisticated for enums
     #if #run IsPrimitiveType( T )
     {
+        #run CheckSpecifiedEnumType( T );
+
         // Just read/write the raw bytes
         ReflectRawBytes( bytes_of( d ), r );
     }

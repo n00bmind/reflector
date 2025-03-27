@@ -118,9 +118,16 @@ TestJsonMonster :: ()
     array_add( *mA.inventory, 255 );
     array_add( *mA.weapons, .{ "Sword", 69 } );
 
-    // FIXME Enums
-    // TODO Ensure all reflectors check for #specified
     writer: JsonWriter;
     writeResult := Reflect( *mA, *writer );
-    log( "Writer result:\n %\n", writer.output );
+    Expect( writeResult == .Ok );
+
+    log( "Writer output:\n %\n", writer.output );
+
+    reader: JsonReader;
+    reader.input = writer.output;
+    readResult := Reflect( *mB, *reader );
+    Expect( readResult == .Ok );
+
+    Expect( DeepEquals( mA, mB ) );
 } @test

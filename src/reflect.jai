@@ -298,6 +298,17 @@ IsEnumType :: inline ( $T: Type ) -> bool
     return ti.type == .ENUM;
 }
 
+// Get "backing type" for enums. Passthrough for the rest
+GetStorageType :: inline ( $T: Type ) -> Type #compile_time
+{
+    if IsEnumType( T )
+    {
+        tie := cast(*Type_Info_Enum) T;
+        return get_type( tie.internal_type );
+    }
+    return T;
+}
+
 CheckSpecifiedEnumType :: ( $T: Type ) #compile_time
 {
     ti := cast(*Type_Info) T;

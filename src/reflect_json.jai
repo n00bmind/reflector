@@ -164,7 +164,7 @@ InitJsonReader :: ( using r: *JsonReader, root: *json_value_s )
 {
     stack.count = 0;
 
-    assert( root );
+    assert( root != null );
     Push( r, root );
 }
 
@@ -186,7 +186,8 @@ FindChild :: ( name: string, obj: *json_object_s ) -> *json_value_s
     child := obj.start;
     while child
     {
-        if( child.name.str == name )
+        childName := string.{ xx child.name.string_size, child.name.str };
+        if childName == name 
             return child.value;
 
         child = child.next;
@@ -252,11 +253,8 @@ Reflect :: inline ( d: *$T, r: *JsonReflector ) -> ReflectResult #expand
             str: string;
             #if #run IsEnumType( T )
             {
-                tie := cast(*Type_Info_Enum) T;
-                if tie.internal_type.signed
-                    str = tprint( "%", cast(s64) d.* );
-                else
-                    str = tprint( "%", cast(u64) d.* );
+                ST :: #run GetStorageType( T );
+                str = tprint( "%", cast(ST) d.* );
             }
             else
                 str = tprint( "%", d.* );
@@ -271,9 +269,12 @@ Reflect :: inline ( d: *$T, r: *JsonReflector ) -> ReflectResult #expand
             if !numValue
                 return .BadData;
 
-            num, ok := string_to_int( numValue.number, 10, T );
+            numStr := string.{ xx numValue.number_size, numValue.number };
+
+            ST :: #run GetStorageType( T );
+            num, ok := string_to_int( numStr, 10, ST );
             if ok
-                d = num;
+                d.* = xx num;
             else
                 return.BadData;
         }
@@ -294,14 +295,11 @@ Reflect :: inline ( d: *$T, r: *JsonReflector ) -> ReflectResult #expand
             if !numValue
                 return .BadData;
 
-            // #if T == float
-            //     num, ok := string_to_float( numValue.number );
-            // else
-            // TODO Does this work
-                num, ok := cast(T) string_to_float64( numValue.number );
+            numStr := string.{ xx numValue.number_size, numValue.number };
+            num, ok := cast(T) string_to_float64( numStr );
 
             if ok
-                d = num;
+                d.* = num;
             else
                 return.BadData;
         }
@@ -321,7 +319,7 @@ Reflect :: inline ( d: *$T, r: *JsonReflector ) -> ReflectResult #expand
             if !strValue
                 return .BadData;
 
-            d = .{ strValue.str, xx strValue.string_size };
+            d.* = .{ xx strValue.string_size, strValue.str };
         }
     }
     else #if #run IsArrayType( T )
@@ -375,20 +373,20 @@ Reflect :: inline ( d: *$T, r: *JsonReflector ) -> ReflectResult #expand
                 Reset( d, count, false );
             }
 
-            itElem := array.start;
-            for d.*
+            itElem := arrayValue.start;
+            for * d.*
             {
                 if !itElem
                     return .BadData;
 
                 Push( r, itElem.value );
 
-                // TODO QUESTION Is 'it' a "reference" to the actual value? i.e. does this pointer work?
-                result := Reflect( *it, r );
+                result := Reflect( it, r );
                 if result != .Ok
                     return result;
 
                 Pop( r );
+                itElem = itElem.next;
             }
         }
     }

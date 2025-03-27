@@ -814,6 +814,8 @@ RegisterField :: ( d: *$T, targetField: *FieldInfo, r: *BinaryWriterFB ) -> Refl
     return fieldType == .Inline;
 }
 {
+    #run CheckSpecifiedEnumType( T );
+
     targetField.size = size_of(T);
     targetField.value = <<d;
     return .Ok;

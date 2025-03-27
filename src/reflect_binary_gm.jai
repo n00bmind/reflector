@@ -262,9 +262,10 @@ Reflect :: inline ( d: *$T, r: *BinaryReflectorGM ) -> ReflectResult #expand
 // from reflect.jai from a Reflect() overload with a #modify block like the one just above
 // TODO I suppose the same issue with ambiguity that we have with the struct Reflect applies here..
 {
-    // TODO We probably want to be able to do something more sophisticated for enums
     #if #run IsPrimitiveType( T )
     {
+        #run CheckSpecifiedEnumType( T );
+
         // Just read/write the raw bytes
         ReflectRawBytes( bytes_of( d ), r );
     }
