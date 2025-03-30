@@ -1,7 +1,7 @@
 
 OverloadedMonster :: struct
 {
-    mana: s16 = 150;                    @reflect_field(2)
+    mana: s16 = 150;                    @reflector_field(2)
     hp: s16 = 100;                      //@field(3)
     friendly: bool = false;             @field(5)
     name: string = "Bob";               @field(4)
@@ -52,11 +52,7 @@ TestOverloadedMonster :: ( name: string, $Reader: Type, $Writer: Type )
     globalCustomReflectCalled = false;
     writer: Writer;
     writeResult := Reflect( *mA, *writer );
-    // Assume it's either a plain array or a BufferBuilder
-    #if type_info( type_of( writer.buffer ) ).type == .ARRAY
-        log( "Wrote % bytes\n", writer.buffer.count );
-    else
-        log( "Wrote % bytes\n", writer.buffer.count );
+    log( "Wrote % bytes\n", writer.buffer.count );
 
     log( "Writer result: %\n", writeResult );
     Expect( writeResult == .Ok );

@@ -36,6 +36,9 @@ AddAllStrings :: ( w: Workspace )
 
 #scope_file
 
+#import "Hash_Table";
+#import "Compiler";
+
 DebugLogs :: false;
 VerboseLogs :: false;
 

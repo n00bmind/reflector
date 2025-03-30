@@ -66,7 +66,7 @@ Reflect :: ( d: *$T, r: *BinaryReflector ) -> ReflectResult
         #insert -> string
         {
             builder: String_Builder;  
-            defer free_buffers(*builder);
+            builder.allocator = temp;
 
             _, info := GatherReflectedTypeInfo( type_info(T) );
             if info.isPacked
@@ -152,7 +152,7 @@ Reflect :: ( d: *$T, r: *BinaryReflector ) -> ReflectResult
             #insert -> string
             {
                 builder: String_Builder;  
-                defer free_buffers(*builder);
+                builder.allocator = temp;
 
                 _, info := GatherReflectedTypeInfo( type_info(T) );
                 for fieldInfo : info.fieldInfo

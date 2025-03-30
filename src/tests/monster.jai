@@ -11,15 +11,15 @@ Equipment :: union
     weapon: Weapon;
 }
 
-Vec3 :: struct @reflect_packed
+Vec3 :: struct @reflector_packed
 {
     x, y, z: float;
 }
 
 Monster :: struct
 {
-    pos: Vec3;                  @reflect_field(1)
-    mana: s16 = 150;            @reflect_field(2)
+    pos: Vec3;                  @reflector_field(1)
+    mana: s16 = 150;            @reflector_field(2)
     hp: s16 = 100;              //@field(3)
     friendly: bool = false;     @field(5)
     name: string = "Bob";       @field(4)

@@ -26,6 +26,7 @@ TestBuildtimeSerializer :: ()
 
     // Create a byte array literal to insert back into the program
     builder: String_Builder;
+    builder.allocator = temp;
     append( *builder, "BuildTimeBuffer :: u8.[\n" );
 
     output := ToArray( *writer.buffer );
