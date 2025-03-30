@@ -257,23 +257,6 @@ GatherReflectedTypeInfo :: ( st: *Type_Info_Struct, stLocation: Source_Code_Loca
     return true, result;
 }
 
-// TODO Not needed anymore?
-// FIXME #no_reset doesnt work at all with stuff that allocates!
-GenStaticTypeInfo :: ( stNodes: [] *Code_Struct ) #compile_time
-{
-    for stNodes
-    {
-        print( "%\n", it.defined_type.name );
-
-        ok, info := GatherReflectedTypeInfo( it.defined_type, make_location( it ) );
-        assert( ok, "GatherReflectedTypeInfo failed for %", it.defined_type );
-
-        table_set( *globalStructTypeInfoTable, it.defined_type, info );
-    }
-
-    // Can't have spaces in notes!
-} @runAfterTypechecking(globalReflectedStructNodes)
-
 
 IsPrimitiveType :: inline ( ti: *Type_Info ) -> bool
 {

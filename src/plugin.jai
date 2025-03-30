@@ -24,7 +24,7 @@ get_plugin :: () -> *Metaprogram_Plugin
 // this won't be a big deal (may have to re-evaluate as we go).
 // NOTE This is callable from user programs, to inject the same code that the plugin would inject when invoked from the cmdline
 // TODO Check if there's some other "official" way of applying a plugin from a user metaprogram
-AddUserStrings :: ( w: Workspace )
+AddAllStrings :: ( w: Workspace )
 {
     add_build_string( ReflectorStrings, w );
     add_build_string( BinaryReflectorStrings, w );
@@ -36,19 +36,20 @@ AddUserStrings :: ( w: Workspace )
 
 #scope_file
 
-DebugLogs :: true;
+DebugLogs :: false;
 VerboseLogs :: false;
 
-globalReflectedTypes: Table(*Type_Info_Struct, bool);
+globalInsertedReflectors: Table(*Type_Info_Struct, bool);
 
 
 OnAddSource :: ( p: *Metaprogram_Plugin )
 {
-    AddUserStrings( p.workspace );
+    AddAllStrings( p.workspace );
 }
 
-// TODO Since we've already inserted the polymorphic Reflect() for structs above,
-// it doesnt seem like we're gonna need to do any manual parsing of stuff?
+// TODO Besides flat-out inserting all necessary code into the user app namespace, we'd like to also provide a smarter
+// mechanism that auto-detects when this is actually required, i.e. when the user app contains a custom Reflect() overload
+// or Reflector subtype.
 OnMessage :: ( p: *Metaprogram_Plugin, message: *Message )
 {
     if message.kind ==
@@ -61,56 +62,34 @@ OnMessage :: ( p: *Metaprogram_Plugin, message: *Message )
                 typechecked.procedure_headers.count, typechecked.procedure_bodies.count, typechecked.structs.count );
             }
 
-            // TODO We need to only be triggered by actual function invocations, and also not emit code when a user-defined body exists
-            for tc: typechecked.procedure_bodies
-            {
-                body := tc.expression;
-
-                for tc.subexpressions
-                {
-                    if it.kind == .PROCEDURE_CALL
-                    {
-                        call := cast(*Code_Procedure_Call) it;
-                        if call.procedure_expression.kind == .IDENT
-                        {
-                            ident := cast(*Code_Ident) call.procedure_expression;
-                            if ident.name == "Reflect"
-                            {
-                                //
-                            }
-                        }
-                    }
-                }
-            }
-
-
             for tc: typechecked.procedure_headers
             {
                 header := tc.expression;
                 #if 1
                 {
                     // Examine all Reflect() calls and make a note of the type of the first argument
-                    // If it's a pointer to some struct, emit the corresponding procedure body into the target workspace
-                    if header.name == "Reflect"
-                    && header.arguments.count == 2 && header.arguments[0].type_inst.pointer_to != null
+                    // If it's a pointer to some struct, insert the code for the corresponding Reflector
+                    if header.name == "Reflect" && header.arguments.count == 2
+                        && header.arguments[0].type_inst.pointer_to != null
+                        && header.arguments[1].type_inst.pointer_to != null
                     {
-                        inst := header.arguments[0].type_inst.pointer_to;
+                        inst := header.arguments[1].type_inst.pointer_to;
                         if inst.result.type == .STRUCT
                         {
                             st := cast(*Type_Info_Struct) inst.result;
 
-                            emitted, newlyAdded := find_or_add( *globalReflectedTypes, st );
-                            if newlyAdded && !<<emitted
+                            inserted, newlyAdded := find_or_add( *globalInsertedReflectors, st );
+                            if newlyAdded && !inserted.*
                             {
                                 #if DebugLogs
                                 {
-                                    print( "##### Found Reflect() call for type %\n", st.name );
+                                    print( "##### Found Reflect() call for Reflector %\n", st.name );
                                 }
 
-                                // If we have not yet emitted a procedure body for this type, try to do so now
-                                if TryEmitBodyFor( st, p.workspace )
+                                // If we have not yet inserted the code for this Reflector, do so now
+                                if AddCodeFor( st, p.workspace )
                                 {
-                                    <<emitted = true;
+                                    inserted.* = true;
                                 }
                             }
                         }
@@ -148,7 +127,7 @@ OnMessage :: ( p: *Metaprogram_Plugin, message: *Message )
     }
 }
 
-TryEmitBodyFor :: ( st: *Type_Info_Struct, w: Workspace ) -> bool
+AddCodeFor :: ( st: *Type_Info_Struct, w: Workspace ) -> bool
 {
     return true;
 }
