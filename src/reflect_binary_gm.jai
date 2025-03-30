@@ -1,6 +1,3 @@
-#load "basic.jai";
-#load "datatypes.jai";
-
 //
 // Binary reflector in the style of Glowmade
 // All type headers, field ids & sizes are inline (no deduplication whatsoever)
@@ -28,25 +25,6 @@ BinaryWriterGM :: struct
     buffer: BufferBuilder( 1 * Megabytes );
 }
 
-#scope_file
-
-
-BinaryTypeInfo :: struct
-{
-    type:                    Type;
-    startOffset:             s64;
-    totalSize:               s64;       // Packed into 64 bits together with fieldCount (so 48 bits max)
-    currentFieldName:        string;
-    currentFieldStartOffset: s64;
-    currentFieldSize:        s64;       // Packed into 64 bits together with field id (so 48 bits max)
-    fieldCount:              u16;
-
-    HeaderSize :: size_of(u64);
-    TotalSizeBits :: (HeaderSize - size_of(type_of(fieldCount))) * 8;
-    TotalSizeMax :: (1 << TotalSizeBits) - 1;
-}
-
-#scope_export
 
 BeginReflectType :: ( info: *BinaryTypeInfo, type: Type, r: *BinaryReflectorGM ) -> bool
 {
@@ -227,6 +205,24 @@ ReflectPacked :: inline ( d: *$T/interface struct {}, r: *BinaryReflectorGM ) ->
 {
     ReflectRawBytes( bytes_of( d ), r );
     return .Ok;
+}
+
+
+#scope_file
+
+BinaryTypeInfo :: struct
+{
+    type:                    Type;
+    startOffset:             s64;
+    totalSize:               s64;       // Packed into 64 bits together with fieldCount (so 48 bits max)
+    currentFieldName:        string;
+    currentFieldStartOffset: s64;
+    currentFieldSize:        s64;       // Packed into 64 bits together with field id (so 48 bits max)
+    fieldCount:              u16;
+
+    HeaderSize :: size_of(u64);
+    TotalSizeBits :: (HeaderSize - size_of(type_of(fieldCount))) * 8;
+    TotalSizeMax :: (1 << TotalSizeBits) - 1;
 }
 
 

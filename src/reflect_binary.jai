@@ -1,7 +1,7 @@
 
 BinaryReflector :: struct( $IsReading2: bool )
 {
-    #as using reflector: Reflector( BinaryTypeInfo, IsReading2, true );
+    #as using reflector: Reflector( void, IsReading2, true );
 
     // TODO Use this in all other reflectors for comparison, as well as for writing
     heap: TempHeap;
@@ -269,10 +269,3 @@ Reflect :: inline ( d: *$T, r: *BinaryReflector ) -> ReflectResult
 
 STR
 
-
-#scope_file
-
-BinaryTypeInfo :: struct
-{
-
-}

@@ -1,10 +1,9 @@
 #import "Basic";
 #import "json";
 
-// TODO IMPORTANT Decide whether we want to deal with field ids in some way, or just provide this as "example code"
+// TODO IMPORTANT Decide how we want to deal with field ids 
 JsonReflector :: struct( $IsReading2: bool )
 {
-    // TODO Eliminate the "type info" parameter from the root polymorphic Reflector, and let each implementation deal with that
     #as using reflector: Reflector( void, IsReading2 );
 
     StackEntry :: struct 
@@ -212,9 +211,7 @@ Reflect :: ( d: *$T, r: *JsonReflector ) -> ReflectResult
 }
 {
     // TODO Do we wanna keep a cached mapping of type_info to generated string?
-    // (for the 'production-ready' generators we need this anyway to generate the type descriptor tables)
     // Note that according to how_to 100 though, this #run should only be invoked once for each type we pass in $T
-    // Do we see two because we pass both a reader and a writer in r for each type?
     #insert #run GenReflectFunction( T, type_info( T ), type_of( r ) );
 }
 

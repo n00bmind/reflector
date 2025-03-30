@@ -1,99 +1,7 @@
-#import "Bucket_Array";
-
 //
 // Binary reflector for the Flatbuffers format
-// Not trying to be perfectly conforming to spec, yet.
+// NOTE Not trying to be perfectly conforming to spec, yet.
 //
-
-// Stored always aligned to their own size
-ScalarType :: enum
-{
-    fb_bool;
-    fb_uint8;
-    fb_uint16;
-    fb_uint32;
-    fb_uint64;
-    fb_int8;
-    fb_int16;
-    fb_int32;
-    fb_int64;
-    fb_float32;
-    fb_float64;
-    fb_enum;
-}
-
-// TODO Not clear what the size of a bool actually is..
-fb_false :: 0;
-fb_true :: !fb_false;
-
-
-uoffset :: u32;
-soffset :: s32;
-voffset :: u16;
-identifier :: [4] u8;
-
-// For fields pointing to sub-tables, vectors and strings
-// NOTE This require that these types of objects always live *after* the table referencing them in the buffer
-At :: ( p: *uoffset ) -> *u8
-{
-    return (cast(*u8)p) + <<p;
-}
-
-// For vtables
-At :: ( p: *soffset ) -> *u8
-{
-    return (cast(*u8)p) - <<p;
-}
-
-// For vtable entries
-At :: ( tableBase: *u8, f: voffset ) -> *u8
-{
-    return tableBase + f;
-}
-
-
-Header :: struct
-{
-    rootTable: uoffset;
-    id: identifier;
-}
-
-// TODO These should be hashed & deduplicated during writing
-VTable :: struct
-{
-    size: u16;
-    tableSize: u16;
-    // A list of offsets to the source table, sorted by field id, starting at 0
-    firstField: voffset;
-}
-
-GetFieldOffset :: ( fieldId: int, vt: *VTable ) -> bool, voffset
-{
-    field := *vt.firstField + fieldId - 1;
-    offsetBytes := cast(*u8)field - cast(*u8)vt;
-
-    if offsetBytes < vt.size
-        return true, <<field;
-    else
-        return false, 0;
-}
-
-//u32 flatbuffers_type_hash_from_name(const char *name)
-//{
-    //uint32_t hash = 2166136261UL;
-    //while (*name) {
-        //hash ^= (uint32_t)*name;
-        //hash = hash * 16777619UL;
-        //++name;
-    //}
-    //if (hash == 0) {
-        //hash = 2166136261UL;
-    //}
-    //return hash;
-//}
-
-
-
 BinaryReflectorFB :: struct( $IsReading2: bool )
 {
     #as using reflector: Reflector( void, IsReading2, true );
@@ -121,246 +29,6 @@ BinaryWriterFB :: struct
     bufferOffset: s64;
 }
 
-FieldInfo :: struct
-{
-    type: *Type_Info;
-    union
-    {
-        value: Any;
-        tableIndex: s64;
-        vectorIndex: s64;
-        stringIndex: s64;
-    }
-    size: s32;
-    // Relative to start of its table, unused in vectors
-    offset: voffset;
-}
-
-GetRelativePos :: ( pos: s64, r: *BinaryWriterFB ) -> uoffset
-{
-    curPos := r.bufferHead + r.bufferOffset;
-    result := pos - curPos;
-    assert( result > 0 );
-    return cast(uoffset) result;
-}
-
-Rewind :: ( offset: s64, r: *BinaryWriterFB ) -> uoffset
-{
-    assert( offset <= r.bufferHead, "Buffer underflow" );
-    r.bufferHead -= offset;
-    r.bufferOffset = 0;
-
-    return cast(uoffset) r.bufferHead;
-}
-
-Write :: ( data: *void, size: s64, r: *BinaryWriterFB )
-{
-    memcpy( *r.buffer[ r.bufferHead + r.bufferOffset ], data, size );
-    r.bufferOffset += size;
-}
-
-// Rewind head back to make space then write
-RewindAndWrite :: ( data: *void, size: s64, r: *BinaryWriterFB ) -> uoffset
-{
-    result := Rewind( size, r );
-    Write( data, size, r );
-    return result;
-}
-
-#scope_file
-
-// Always ensure we're not trying to read past the end of the buffer
-// If you call this with an exhausted buffer, no copy will occur
-// TODO There's a compiler bug affecting these atm
-#if 0
-{
-    Read :: inline ( using r: *BinaryReaderFB, d: *$T )
-    {
-        bytesToCopy := min( size_of(T), buffer.count - bufferHead );
-        Copy( buffer.data + bufferHead, d, bytesToCopy );
-    }
-
-    Read :: inline ( using r: *BinaryReaderFB, offset: s64, d: *$T )
-    {
-        bytesToCopy := min( size_of(T), buffer.count - offset );
-        Copy( buffer.data + offset, d, bytesToCopy );
-    }
-}
-
-Read :: inline ( using r: *BinaryReaderFB, d: [] u8 )
-{
-    bytesToCopy := min( d.count, buffer.count - bufferHead );
-    Copy( buffer.data + bufferHead, d.data, bytesToCopy );
-}
-
-Read :: inline ( using r: *BinaryReaderFB, offset: s64, d: [] u8 )
-{
-    bytesToCopy := min( d.count, buffer.count - offset );
-    Copy( buffer.data + offset, d.data, bytesToCopy );
-}
-
-ReadAndAdvance :: inline ( using r: *BinaryReflectorFB, d: [] u8 )
-{
-    bytesToCopy := min( d.count, buffer.count - bufferHead );
-    Copy( buffer.data + bufferHead, d.data, bytesToCopy );
-    bufferHead += bytesToCopy;
-}
-
-
-TableInfo :: struct
-{
-    // Position in the buffer where these were written
-    tablePos, vtablePos: uoffset;
-    firstFieldIdx: s32;
-    fieldCount: s32;
-    maxId: u16;
-    tableSize, vtableSize: s32;
-}
-
-VectorInfo :: struct
-{
-    // Position in the buffer
-    pos: uoffset;
-    size: s32;
-    firstFieldIdx: s32;
-    count: s32;
-    data: *void;
-}
-
-StringInfo :: struct
-{
-    // Position in the buffer
-    pos: uoffset;
-    size: s32;
-    data: string;
-}
-
-
-// FIXME Incorporate alignment rules!
-ComputeTableSize :: ( type: Type ) -> s64
-{
-    ti := cast(*Type_Info) type;
-    assert( ti.type == .STRUCT, "We only care about structs here!" );
-    tis := cast(*Type_Info_Struct) type;
-
-    // At a minimum, 1 soffset pointing to the vtable
-    totalSize := size_of(soffset);
-    for m: tis.members
-    {
-        // NOTE TODO The computed sizes here heavily depend on what's implemented or not at the reflector level!
-        // So check with that code often to ensure its in sync
-        if m.type.type ==
-        {
-            case .INTEGER; #through;
-            case .FLOAT; #through;
-            case .BOOL; #through;
-            case .ENUM;
-                totalSize += m.type.runtime_size;
-            case .STRUCT;
-            case .ARRAY;
-            case .STRING;
-                totalSize += size_of(uoffset);
-            case;
-                assert( false, "Unsupported member type: %\n", m.type.type );
-            // TODO 
-            //case .ANY;
-            //case .POINTER;
-
-            //case .OVERLOAD_SET;
-            //case .POLYMORPHIC_VARIABLE;
-            //case .TYPE;
-            //case .CODE;
-            //case .VARIANT;
-            //case .PROCEDURE;
-            //case .VOID;
-        }
-    }
-    return totalSize;
-}
-
-FieldType :: enum
-{
-    Ignored;
-    Inline;
-    Table;
-    Vector;
-    String;
-}
-FieldTypeFor :: ( t: *Type_Info ) -> FieldType
-{
-    if t.type ==
-    {
-        case .INTEGER; #through;
-        case .FLOAT; #through;
-        case .BOOL; #through;
-        case .ENUM;
-            return .Inline;
-
-        case .STRUCT;
-            return .Table;
-
-        case .ARRAY;
-            return .Vector;
-
-        case .STRING;
-            return .String;
-    }
-    return .Ignored;
-}
-
-ArrayElementTypeFor :: ( t: *Type_Info_Array ) -> Type
-{
-    return get_type( t.element_type );
-}
-
-
-#scope_module
-
-BinaryReflectorFBStrings :: #string STR
-
-#import "Bucket_Array";
-
-// NOTE We cannot use a combined function accepting BinaryReflectorFB here, as that is still a polymorph,
-// and hence atm the compiler fails to resolve that against the generic Reflect() (accepting $Reflector)
-// However in this case I dont think that's all that important
-// TODO Should be able to do this once we are allowed to declare a "root" Reflect() for type Reflector
-Reflect :: ( d: *$T/interface struct {}, r: *BinaryWriterFB ) -> ReflectResult
-{
-    rootField: FieldInfo;
-    // Header is 4 bytes at a minimum
-    r.measuredBufferSize = size_of(uoffset);
-
-    result := RegisterField( d, *rootField, r );
-    if result != .Ok
-        return result;
-
-    log( "Measured buffer size: %\n", r.measuredBufferSize );
-    r.buffer = NewArray( r.measuredBufferSize, u8 );
-    r.bufferHead = r.buffer.count;
-
-    result = ReflectField( d, rootField, r );
-
-    // Write header pointing to root table
-    rootTable := *r.tables[ rootField.tableIndex ];
-    p := Rewind( size_of(uoffset), r );
-    assert( p == 0, "Should have filled the buffer by now" );
-    Write( *rootTable.tablePos, size_of(uoffset), r );
-
-    return result;
-}
-Reflect :: ( d: *$T/interface struct {}, r: *BinaryReaderFB ) -> ReflectResult
-{
-    // NOTE Assume all buffers contain a root table
-    r.bufferHead = 0;
-    result := ReflectField( d, .{}, r );
-
-    return result;
-}
-
-STR
-
-
-#scope_export
 
 // TODO Should we rename this so it's not confused with the mechanism used for custom reflectors?
 ReflectField :: ( d: *$T, sourceField: FieldInfo, r: *BinaryReflectorFB ) -> ReflectResult
@@ -829,9 +497,331 @@ RegisterField :: ( d: *$T, targetField: *FieldInfo, r: *BinaryWriterFB ) -> Refl
 
 
 
-ReflectPacked :: inline ( d: *$T/interface struct {}, r: *BinaryReflectorFB ) -> ReflectResult
+FieldInfo :: struct
 {
-    //ReflectRawBytes( bytes_of( d ), r );
-    return .Ok;
+    type: *Type_Info;
+    union
+    {
+        value: Any;
+        tableIndex: s64;
+        vectorIndex: s64;
+        stringIndex: s64;
+    }
+    size: s32;
+    // Relative to start of its table, unused in vectors
+    offset: voffset;
 }
+
+// TODO Not clear what the size of a bool actually is..
+fb_false :: 0;
+fb_true :: !fb_false;
+
+uoffset :: u32;
+soffset :: s32;
+voffset :: u16;
+identifier :: [4] u8;
+
+
+Rewind :: ( offset: s64, r: *BinaryWriterFB ) -> uoffset
+{
+    assert( offset <= r.bufferHead, "Buffer underflow" );
+    r.bufferHead -= offset;
+    r.bufferOffset = 0;
+
+    return cast(uoffset) r.bufferHead;
+}
+
+Write :: ( data: *void, size: s64, r: *BinaryWriterFB )
+{
+    memcpy( *r.buffer[ r.bufferHead + r.bufferOffset ], data, size );
+    r.bufferOffset += size;
+}
+
+
+#scope_file
+
+// Stored always aligned to their own size
+ScalarType :: enum
+{
+    fb_bool;
+    fb_uint8;
+    fb_uint16;
+    fb_uint32;
+    fb_uint64;
+    fb_int8;
+    fb_int16;
+    fb_int32;
+    fb_int64;
+    fb_float32;
+    fb_float64;
+    fb_enum;
+}
+
+// For fields pointing to sub-tables, vectors and strings
+// NOTE This require that these types of objects always live *after* the table referencing them in the buffer
+At :: ( p: *uoffset ) -> *u8
+{
+    return (cast(*u8)p) + <<p;
+}
+
+// For vtables
+At :: ( p: *soffset ) -> *u8
+{
+    return (cast(*u8)p) - <<p;
+}
+
+// For vtable entries
+At :: ( tableBase: *u8, f: voffset ) -> *u8
+{
+    return tableBase + f;
+}
+
+
+Header :: struct
+{
+    rootTable: uoffset;
+    id: identifier;
+}
+
+// TODO These should be hashed & deduplicated during writing
+VTable :: struct
+{
+    size: u16;
+    tableSize: u16;
+    // A list of offsets to the source table, sorted by field id, starting at 0
+    firstField: voffset;
+}
+
+GetFieldOffset :: ( fieldId: int, vt: *VTable ) -> bool, voffset
+{
+    field := *vt.firstField + fieldId - 1;
+    offsetBytes := cast(*u8)field - cast(*u8)vt;
+
+    if offsetBytes < vt.size
+        return true, <<field;
+    else
+        return false, 0;
+}
+
+//u32 flatbuffers_type_hash_from_name(const char *name)
+//{
+    //uint32_t hash = 2166136261UL;
+    //while (*name) {
+        //hash ^= (uint32_t)*name;
+        //hash = hash * 16777619UL;
+        //++name;
+    //}
+    //if (hash == 0) {
+        //hash = 2166136261UL;
+    //}
+    //return hash;
+//}
+
+
+GetRelativePos :: ( pos: s64, r: *BinaryWriterFB ) -> uoffset
+{
+    curPos := r.bufferHead + r.bufferOffset;
+    result := pos - curPos;
+    assert( result > 0 );
+    return cast(uoffset) result;
+}
+
+// Rewind head back to make space then write
+RewindAndWrite :: ( data: *void, size: s64, r: *BinaryWriterFB ) -> uoffset
+{
+    result := Rewind( size, r );
+    Write( data, size, r );
+    return result;
+}
+
+
+// Always ensure we're not trying to read past the end of the buffer
+// If you call this with an exhausted buffer, no copy will occur
+// TODO There's a compiler bug affecting these atm
+#if 0
+{
+    Read :: inline ( using r: *BinaryReaderFB, d: *$T )
+    {
+        bytesToCopy := min( size_of(T), buffer.count - bufferHead );
+        Copy( buffer.data + bufferHead, d, bytesToCopy );
+    }
+
+    Read :: inline ( using r: *BinaryReaderFB, offset: s64, d: *$T )
+    {
+        bytesToCopy := min( size_of(T), buffer.count - offset );
+        Copy( buffer.data + offset, d, bytesToCopy );
+    }
+}
+
+Read :: inline ( using r: *BinaryReaderFB, d: [] u8 )
+{
+    bytesToCopy := min( d.count, buffer.count - bufferHead );
+    Copy( buffer.data + bufferHead, d.data, bytesToCopy );
+}
+
+Read :: inline ( using r: *BinaryReaderFB, offset: s64, d: [] u8 )
+{
+    bytesToCopy := min( d.count, buffer.count - offset );
+    Copy( buffer.data + offset, d.data, bytesToCopy );
+}
+
+ReadAndAdvance :: inline ( using r: *BinaryReflectorFB, d: [] u8 )
+{
+    bytesToCopy := min( d.count, buffer.count - bufferHead );
+    Copy( buffer.data + bufferHead, d.data, bytesToCopy );
+    bufferHead += bytesToCopy;
+}
+
+
+TableInfo :: struct
+{
+    // Position in the buffer where these were written
+    tablePos, vtablePos: uoffset;
+    firstFieldIdx: s32;
+    fieldCount: s32;
+    maxId: u16;
+    tableSize, vtableSize: s32;
+}
+
+VectorInfo :: struct
+{
+    // Position in the buffer
+    pos: uoffset;
+    size: s32;
+    firstFieldIdx: s32;
+    count: s32;
+    data: *void;
+}
+
+StringInfo :: struct
+{
+    // Position in the buffer
+    pos: uoffset;
+    size: s32;
+    data: string;
+}
+
+
+// FIXME Incorporate alignment rules!
+ComputeTableSize :: ( type: Type ) -> s64
+{
+    ti := cast(*Type_Info) type;
+    assert( ti.type == .STRUCT, "We only care about structs here!" );
+    tis := cast(*Type_Info_Struct) type;
+
+    // At a minimum, 1 soffset pointing to the vtable
+    totalSize := size_of(soffset);
+    for m: tis.members
+    {
+        // NOTE TODO The computed sizes here heavily depend on what's implemented or not at the reflector level!
+        // So check with that code often to ensure its in sync
+        if m.type.type ==
+        {
+            case .INTEGER; #through;
+            case .FLOAT; #through;
+            case .BOOL; #through;
+            case .ENUM;
+                totalSize += m.type.runtime_size;
+            case .STRUCT;
+            case .ARRAY;
+            case .STRING;
+                totalSize += size_of(uoffset);
+            case;
+                assert( false, "Unsupported member type: %\n", m.type.type );
+            // TODO 
+            //case .ANY;
+            //case .POINTER;
+
+            //case .OVERLOAD_SET;
+            //case .POLYMORPHIC_VARIABLE;
+            //case .TYPE;
+            //case .CODE;
+            //case .VARIANT;
+            //case .PROCEDURE;
+            //case .VOID;
+        }
+    }
+    return totalSize;
+}
+
+FieldType :: enum
+{
+    Ignored;
+    Inline;
+    Table;
+    Vector;
+    String;
+}
+FieldTypeFor :: ( t: *Type_Info ) -> FieldType
+{
+    if t.type ==
+    {
+        case .INTEGER; #through;
+        case .FLOAT; #through;
+        case .BOOL; #through;
+        case .ENUM;
+            return .Inline;
+
+        case .STRUCT;
+            return .Table;
+
+        case .ARRAY;
+            return .Vector;
+
+        case .STRING;
+            return .String;
+    }
+    return .Ignored;
+}
+
+ArrayElementTypeFor :: ( t: *Type_Info_Array ) -> Type
+{
+    return get_type( t.element_type );
+}
+
+
+#scope_module
+
+BinaryReflectorFBStrings :: #string STR
+
+#import "Bucket_Array";
+
+// NOTE We cannot use a combined function accepting BinaryReflectorFB here, as that is still a polymorph,
+// and hence atm the compiler fails to resolve that against the generic Reflect() (accepting $Reflector)
+// However in this case I dont think that's all that important
+// TODO Should be able to do this once we are allowed to declare a "root" Reflect() for type Reflector
+Reflect :: ( d: *$T/interface struct {}, r: *BinaryWriterFB ) -> ReflectResult
+{
+    rootField: FieldInfo;
+    // Header is 4 bytes at a minimum
+    r.measuredBufferSize = size_of(uoffset);
+
+    result := RegisterField( d, *rootField, r );
+    if result != .Ok
+        return result;
+
+    log( "Measured buffer size: %\n", r.measuredBufferSize );
+    r.buffer = NewArray( r.measuredBufferSize, u8 );
+    r.bufferHead = r.buffer.count;
+
+    result = ReflectField( d, rootField, r );
+
+    // Write header pointing to root table
+    rootTable := *r.tables[ rootField.tableIndex ];
+    p := Rewind( size_of(uoffset), r );
+    assert( p == 0, "Should have filled the buffer by now" );
+    Write( *rootTable.tablePos, size_of(uoffset), r );
+
+    return result;
+}
+Reflect :: ( d: *$T/interface struct {}, r: *BinaryReaderFB ) -> ReflectResult
+{
+    // NOTE Assume all buffers contain a root table
+    r.bufferHead = 0;
+    result := ReflectField( d, .{}, r );
+
+    return result;
+}
+
+STR
 

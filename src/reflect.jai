@@ -330,6 +330,9 @@ IsPrimitiveArrayType :: inline ( $T : Type ) -> bool
 #import "String";
 #import "Math";
 
+#load "basic.jai";
+#load "datatypes.jai";
+
 // NOTE All notes can be written as specified or with a 'reflector_' prefix before the given name
 // NOTE Returns a temporary args array
 // TODO Convert string args based on names & types array
