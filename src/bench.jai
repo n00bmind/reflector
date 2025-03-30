@@ -1,9 +1,9 @@
 // TODO Add a new "NaiveReflector" contender using the reflection module included with the compiler (i.e. "runtime" reflection)
 #import "Basic";
 
-// TODO Automate dependency downloading etc
-#import "bricks";
 #import "reflector";
+#import "rep-tester";
+#import "unotest";  // For DeepEquals
 
 #load "tests/nested_type.jai";
 
@@ -53,7 +53,8 @@ BenchmarkBinaryReader :: ( name: string, $Reader: Type, $Writer: Type )
     print( "Reading % bytes\n", reader.buffer.count );
     result = Reflect( *readChunk, *reader );
     print( "Reader result: %\n", result );
-    // FIXME Compare for equality!
+
+    assert( DeepEquals( readChunk, writtenChunk ) );
 
 
     tester: RepetitionTester;
@@ -73,10 +74,6 @@ BenchmarkBinaryReader :: ( name: string, $Reader: Type, $Writer: Type )
         EndTime( *tester );
         CountBytes( *tester, reader2.buffer.count );
 
-        // TODO Something doesnt seem right.. adding this call slows down the benchmark, even though it's done outside of the timed zone
-        // You'd think that if anything, NOT resetting this would cause slow downs, since the allocator will be forced to eventually
-        // allocate new pages, and we'll have to pay the corresponding page faults for those, but no (!)
-        // So step through all this setup with the debugger, and try to integrate Tracy to add some instrumentation.
         reset_temporary_storage();
     }
 }

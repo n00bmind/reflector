@@ -115,6 +115,7 @@ build :: ()
             // Grab current system version of required modules and include it in our own private modules/ folder
             modFiles := string.[
                 "unotest.jai",
+                "rep-tester.jai",
                 "json.jai",
             ];
 
