@@ -11,6 +11,7 @@ Some features:
 There is pretty much a single procedure you need to get familiar with, called `Reflect`. It takes two arguments:
 - The data you want to process
 - The Reflector subtype used to process it
+
 (both as pointers). It also returns the result of the operation.
 The Reflector you pass determines what happens with the data. In the case of binary serialization (and in most others), there's in fact a separate Reflector for "reading" vs "writing" (serialising vs. deserialising) the data.
 
