@@ -96,6 +96,7 @@ build :: ()
                 "src/reflect_binary.jai",
                 "src/reflect_binary_gm.jai",
                 "src/reflect_binary_fb.jai",
+                "src/reflect_json.jai",
                 "src/datatypes.jai",
                 "src/basic.jai",
             ];
