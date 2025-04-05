@@ -65,7 +65,18 @@ Most data models evolve over time during development, attributes get added, remo
 - _When a new attribute gets added_ to the struct, you simply give it a new *previously unused* id number.
 - _When an attribute gets renamed_, you do nothing. As long as the type of the attribute and its id doesnt change, you can name it however you like, and everything just works.
 - _When moving attributes around_, again you do nothing, just ensure the same field note is also moved together with its attribute so the id associations remain unchanged.
-- _When an attribute gets deleted_, you simply stop using its id. It's also important that no new attributes re-use that same id, so a simple convention is to comment out the attribute (and its note) to leave a track record for the future and indicate that said field id has already been "consumed" and should never be used again.
+  ```
+  // before                                            // after
+  pos: Vec3;                  @field(1)                magicPoints: s16 = 150;          @field(2)
+  mana: s16 = 150;            @field(2)                location: Vec3;                  @field(1)
+  ```
+- _When an attribute gets deleted_, you simply stop using its id. It's also important that no new attributes re-use that same id in the future, so a simple convention is to comment out the attribute (and its note) to leave a track record for the future and indicate that said field id has already been "consumed" and should never be used again.
 - Changing the type of an existing attribute would in this model be equivalent to "deleting" the attribute then "adding" it again, i.e. instead of changing its type in place you'd comment it out and add a new attribute (with the same or different name) with a new field id.
-
+  ```
+  // before                                            // after
+  color: Color = .Blue;       @field(5)                // color: Color = .Blue;       @field(5)
+  weapons: [..] Weapon;       @field(6)                // weapons: [..] Weapon;       @field(6)    <-- ids 5 & 6 are gone now
+                                                       color: u32 = 0x0000FF;       @field(7)   // Brand new 'color' attribute
+  ```
+  
 That's pretty much it. Following these rules will mean _any data you have ever saved will be readable by any future version of your code, and any older version of your code can read any data you save now or in the future_. When a reader encounters fields in the data stream it doesnt know anything about, it'll simply skip them, and when any fields it does expect are missing from the data stream, they'll simply be given their default initialisation value.
