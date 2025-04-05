@@ -83,3 +83,12 @@ Most data models evolve over time during development, attributes get added, remo
   ```
   
 That's pretty much it. Following these rules will mean that _any data you have ever saved will be readable by any future version of your code, and any older version of your code can read any data you save now or in the future_. When a reader encounters fields in the data stream it doesnt know anything about, it'll simply skip them, and when any fields it does expect are missing from the data stream, they'll simply be given their default initialisation value.
+
+
+## More fine-grained customization
+## Writing custom Reflectors
+// TO DO
+
+
+## Contributing
+I haven't seen this model of attribute-centered reflection talked about very much, but after years of using it in production in a games studio, I'm convinced of its very real usefulness and power, so I've tried to make this module approachable to newcomers. Now, there's _tons_ to work on still, as this simple initial premise can go surprisingly deep, and my time is pretty limited since I have a fulltime job. But I'm very interested in any feedback on how to make this module better and where to go from here, so please feel free to open new issues with any questions / suggestions.
