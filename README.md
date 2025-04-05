@@ -74,9 +74,12 @@ Most data models evolve over time during development, attributes get added, remo
 - Changing the type of an existing attribute would in this model be equivalent to "deleting" the attribute then "adding" it again, i.e. instead of changing its type in place you'd comment it out and add a new attribute (with the same or different name) with a new field id.
   ```
   // before                                            // after
+                                                       // ids 5 & 6 are gone now
   color: Color = .Blue;       @field(5)                // color: Color = .Blue;       @field(5)
-  weapons: [..] Weapon;       @field(6)                // weapons: [..] Weapon;       @field(6)    <-- ids 5 & 6 are gone now
-                                                       color: u32 = 0x0000FF;       @field(7)   // Brand new 'color' attribute
+  weapons: [..] Weapon;       @field(6)                // weapons: [..] Weapon;       @field(6)
+  
+                                                       // Brand new 'color' attribute
+                                                       color: u32 = 0x0000FF;      @field(7)
   ```
   
-That's pretty much it. Following these rules will mean _any data you have ever saved will be readable by any future version of your code, and any older version of your code can read any data you save now or in the future_. When a reader encounters fields in the data stream it doesnt know anything about, it'll simply skip them, and when any fields it does expect are missing from the data stream, they'll simply be given their default initialisation value.
+That's pretty much it. Following these rules will mean that _any data you have ever saved will be readable by any future version of your code, and any older version of your code can read any data you save now or in the future_. When a reader encounters fields in the data stream it doesnt know anything about, it'll simply skip them, and when any fields it does expect are missing from the data stream, they'll simply be given their default initialisation value.
