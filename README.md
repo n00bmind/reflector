@@ -8,7 +8,18 @@ Some features:
 - Easy to write your own custom reflectors
 
 ## Usage
-There is pretty much a single procedure you need to get familiar with, called `Reflect`. It takes two arguments:
+To import from this project as is, just pull all the files and put them in some directory, then simply do
+```jai
+#import,file "<reflector_path>/modules/reflector.jai";
+```
+However, only a few files in this repo are needed for the module to work. So you can also run
+```
+> build dist
+```
+at a command prompt at the root of the project to get the required files in `bin/dist` that you can copy directly to your project or system modules directory.
+
+---
+As for using the library itself, there is pretty much a single procedure you need to get familiar with, called `Reflect`. It takes two arguments:
 - The data you want to process
 - The `Reflector` subtype used to process it
 
