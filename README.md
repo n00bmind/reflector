@@ -61,7 +61,7 @@ Also, side note (pun intended), `field` is the abbreviated form of the note, but
 
 ## Data model evolution
 Most data models evolve over time during development, attributes get added, removed, renamed, etc. Using the same mechanism that you used above just to tell the reflector what gets persisted, you can support all these changes as well, by following a very simple set of rules:
-- As mentioned above, the main unbreakable rule is that the field ids must correspond to a given attribute and only that attribute. That's how the reflector identifies which piece of data in the data stream corresponds to that attribute. You can assign id numbers as you see fit (up to U16_MAX, 0 is reserved), the simplest strategy is to just start at 1 and increase from there. But once an attribute has been serialised using a certain id, it must continue using that id for the lifetime of said attribute.
+- As mentioned earlier, the main unbreakable rule is that the field ids must correspond to a given attribute and only that attribute. That's how the reflector identifies which piece of data in the data stream corresponds to that attribute. You can assign id numbers as you see fit (up to U16_MAX, 0 is reserved), the simplest strategy is to just start at 1 and increase from there. But once an attribute has been serialised using a certain id, it must continue using that id for the lifetime of said attribute.
 - _When a new attribute gets added_ to the struct, you simply give it a new *previously unused* id number.
 - _When an attribute gets renamed_, you do nothing. As long as the type of the attribute and its id doesnt change, you can name it however you like, and everything just works.
 - _When moving attributes around_, again you do nothing, just ensure the same field note is also moved together with its attribute so the id associations remain unchanged.
@@ -79,7 +79,7 @@ Most data models evolve over time during development, attributes get added, remo
   weapons: [..] Weapon;       @field(6)                // weapons: [..] Weapon;       @field(6)
   
                                                        // Brand new 'color' attribute
-                                                       color: u32 = 0x0000FF;      @field(7)
+                                                       colour: u32 = 0x0000FF;      @field(7)
   ```
   
 That's pretty much it. Following these rules will mean that _any data you have ever saved will be readable by any future version of your code, and any older version of your code can read any data you save now or in the future_. When a reader encounters fields in the data stream it doesnt know anything about, it'll simply skip them, and when any fields it does expect are missing from the data stream, they'll simply be given their default initialisation value.
